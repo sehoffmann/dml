@@ -6,8 +6,6 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-import dmlcloud
-
 project = 'dmlcloud'
 copyright = '2024, Sebastian Hoffmann'
 author = 'Sebastian Hoffmann'
@@ -25,7 +23,6 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
 
 
 # -- Options for HTML output -------------------------------------------------
