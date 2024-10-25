@@ -2,6 +2,7 @@
 /slurm-*.out
 /wandb
 /doc/_build
+/doc/generated/
 
 ############################  Auto Generated ############################
 
