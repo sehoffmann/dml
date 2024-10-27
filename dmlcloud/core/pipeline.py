@@ -17,6 +17,11 @@ from .distributed import all_gather_object, broadcast_object, is_root, local_ran
 from ..util.logging import add_log_handlers, experiment_header, general_diagnostics, IORedirector
 
 
+__all__ = [
+    'TrainingPipeline',
+]
+
+
 class TrainingPipeline:
     def __init__(self, config: Optional[Union[OmegaConf, Dict]] = None, name: Optional[str] = None):
         if config is None:

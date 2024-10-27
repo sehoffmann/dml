@@ -1,7 +1,7 @@
 .. currentmodule:: dmlcloud
 
-API Reference
-=============
+dmlcloud
+========
 
 This the API reference for the dmlcloud package.
 
@@ -10,6 +10,7 @@ This the API reference for the dmlcloud package.
 
     TrainingPipeline
     Stage
+    TrainValStage
 
 
 Initialization
@@ -21,6 +22,17 @@ Initialization
     init_process_group_slurm
     init_process_group_MPI
     init_process_group_auto
+
+
+Metric Tracking
+--------------
+.. autosummary::
+    :toctree: generated
+
+    MetricReducer
+    MetricTracker
+    reduce_tensor
+    Reduction
 
 
 Distributed Helpers

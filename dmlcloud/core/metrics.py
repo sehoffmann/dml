@@ -4,13 +4,28 @@ import torch
 import torch.distributed as dist
 
 
+__all__ = [
+    'Reduction',
+    'reduce_tensor',
+    'MetricReducer',
+    'MetricTracker',
+]
+
 class Reduction(Enum):
+    """
+    Reduction operation
+    """
+
     MEAN = 'MEAN'
     SUM = 'SUM'
     MIN = 'MIN'
     MAX = 'MAX'
 
     def as_torch(self):
+        """
+        Returns the corresponding torch.distribution.ReduceOp
+        """
+
         if self == Reduction.SUM:
             return dist.ReduceOp.SUM
         elif self == Reduction.MIN:
@@ -21,7 +36,11 @@ class Reduction(Enum):
             raise ValueError(f'Reduction {self} is not supported by torch')
 
 
-def reduce_tensor(tensor, reduction, dim=None):
+def reduce_tensor(tensor: torch.Tensor, reduction: Reduction, dim=None):
+    """
+    Reduces tensor along dim with the given reduction.
+    """
+
     if not isinstance(tensor, torch.Tensor):
         raise ValueError('tensor must be a torch.Tensor')
 
