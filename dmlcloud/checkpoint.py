@@ -6,7 +6,7 @@ from typing import Optional
 
 from omegaconf import OmegaConf
 
-from dmlcloud.util.slurm import slurm_job_id
+from dmlcloud.slurm import slurm_job_id
 
 
 def sanitize_filename(filename: str) -> str:

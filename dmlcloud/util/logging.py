@@ -10,8 +10,8 @@ import torch
 import torch.distributed as dist
 
 import dmlcloud
-from . import slurm
-from .git import git_hash
+from .. import slurm
+from ..git import git_hash
 from .thirdparty import is_imported, ML_MODULES, try_get_version
 
 

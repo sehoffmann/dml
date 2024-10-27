@@ -1,4 +1,8 @@
-from .project import run_in_project
+"""
+Provides functions to interact with git
+"""
+
+from .util.project import run_in_project
 
 
 def git_hash(short=False):

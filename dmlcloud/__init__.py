@@ -6,9 +6,21 @@ from dmlcloud.pipeline import TrainingPipeline
 from dmlcloud.stage import Stage, TrainValStage
 from dmlcloud.util.distributed import *
 
+import dmlcloud.data as data
+import dmlcloud.git as git
+import dmlcloud.slurm as slurm
+
 __version__ = "0.3.3"
 
+# Packages
 __all__ = [
+    'data',
+    'git',
+    'slurm',
+]
+
+# Main classes
+__all__ += [
     'TrainingPipeline',
     'Stage',
     'TrainValStage',
