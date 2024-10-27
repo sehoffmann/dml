@@ -4,7 +4,7 @@ from contextlib import contextmanager
 import torch
 import torch.distributed as dist
 
-from .tcp import find_free_port, get_local_ips
+from ..util.tcp import find_free_port, get_local_ips
 
 __all__ = [
     'has_slurm',

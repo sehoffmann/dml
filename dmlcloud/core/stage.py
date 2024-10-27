@@ -7,8 +7,8 @@ import torch
 from progress_table import ProgressTable
 
 from .metrics import MetricTracker, Reduction
-from .util.distributed import is_root
-from .util.logging import DevNullIO, flush_log_handlers
+from .distributed import is_root
+from ..util.logging import DevNullIO, flush_log_handlers
 
 __all__ = [
     'Stage',

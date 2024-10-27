@@ -2,7 +2,7 @@ import sys
 
 import pytest
 import torch
-from dmlcloud.metrics import MetricReducer, MetricTracker, Reduction
+from dmlcloud.core.metrics import MetricReducer, MetricTracker, Reduction
 
 
 class TestMetricReducer:

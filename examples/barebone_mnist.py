@@ -3,24 +3,23 @@ import sys
 sys.path.insert(0, './')
 
 import torch
-from dmlcloud.pipeline import TrainingPipeline
-from dmlcloud.stage import Stage
-from dmlcloud.util.distributed import init_process_group_auto, is_root, root_first
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
+import dmlcloud as dml
 
-class MNISTStage(Stage):
+
+class MNISTStage(dml.Stage):
     def pre_stage(self):
         transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
 
-        with root_first():
-            train_dataset = datasets.MNIST(root='data', train=True, download=is_root(), transform=transform)
+        with dml.root_first():
+            train_dataset = datasets.MNIST(root='data', train=True, download=dml.is_root(), transform=transform)
             self.train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
             self.train_loader = DataLoader(train_dataset, batch_size=32, sampler=self.train_sampler)
 
-            val_dataset = datasets.MNIST(root='data', train=False, download=is_root(), transform=transform)
+            val_dataset = datasets.MNIST(root='data', train=False, download=dml.is_root(), transform=transform)
             val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=False)
             self.val_loader = DataLoader(val_dataset, batch_size=32, sampler=val_sampler)
 
@@ -84,9 +83,9 @@ class MNISTStage(Stage):
 
 
 def main():
-    init_process_group_auto()
+    dml.init_process_group_auto()
 
-    pipeline = TrainingPipeline()
+    pipeline = dml.TrainingPipeline()
     pipeline.append_stage(MNISTStage(), max_epochs=3)
     pipeline.run()
 

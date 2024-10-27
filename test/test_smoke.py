@@ -2,8 +2,8 @@ import sys
 
 import pytest
 import torch
-from dmlcloud.pipeline import TrainingPipeline
-from dmlcloud.stage import TrainValStage
+from dmlcloud.core.pipeline import TrainingPipeline
+from dmlcloud.core.stage import TrainValStage
 
 
 class DummyDataset(torch.utils.data.Dataset):
