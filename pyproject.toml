@@ -24,6 +24,9 @@ dynamic = ["version", "readme", "dependencies"]
 [project.urls]
 Repository = "https://github.com/sehoffmann/dmlcloud"
 
+[project.scripts]
+dmlrun = "dmlcloud.run:main"
+
 [tool.setuptools.packages.find]
 include = ["dmlcloud*"]
 namespaces = false

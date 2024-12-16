@@ -15,12 +15,30 @@ A torch library for easy distributed deep learning on HPC clusters. Supports bot
 - A wealth of useful utility functions
 
 ## Installation
+dmlcloud can be installed directly from PyPI:
 ```
 pip install dmlcloud
 ```
 
+Alternatively, you can install the latest development version directly from Github:
+```
+pip install git+https://github.com/tangentlabs/django-oscar-paypal.git@issue/34/oscar-0.6
+```
+
 ## Minimal Example
-*TODO*
+[examples/barebone_mnist.py](example/barebone_mnist.py) features a minimal and barebone example on how to distributely train MNIST.
+To run it on a single node with 4 GPUs, use
+```
+dmlrun -n 4 examples/barebone_mnist.py
+```
+
+`dmlrun` is a thin wrapper around `torchrun` that makes development work on a single node easier.
+
+
+To run your training across multiple nodes on a slurm cluster instead, you can simply use `srun`:
+```
+srun --ntasks-per-node [NUM_GPUS] python examples/barebone_mnist.py
+```
 
 ## Documentation
 
