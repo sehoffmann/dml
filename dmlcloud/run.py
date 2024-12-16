@@ -43,7 +43,7 @@ def main():
 
     args = parser.parse_args()
 
-    if args.gpus and args.num_gpus:
+    if args.gpus and args.nprocs:
         raise ValueError('Only one of --gpus or --num-gpus can be specified.')
 
     if args.gpus:
@@ -63,6 +63,7 @@ def main():
         '--standalone',
         '--nproc_per_node',
         f'{nprocs}',
+        '--no-python',
     ]
 
     cmdline += [args.script] + args.args
