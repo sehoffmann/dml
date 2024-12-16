@@ -26,7 +26,7 @@ pip install git+https://github.com/tangentlabs/django-oscar-paypal.git@issue/34/
 ```
 
 ## Minimal Example
-[examples/barebone_mnist.py](example/barebone_mnist.py) features a minimal and barebone example on how to distributely train MNIST.
+See [examples/barebone_mnist.py](https://github.com/sehoffmann/dmlcloud/blob/develop/examples/barebone_mnist.py) for a minimal and barebone example on how to distributely train MNIST.
 To run it on a single node with 4 GPUs, use
 ```
 dmlrun -n 4 examples/barebone_mnist.py
