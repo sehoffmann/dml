@@ -20,8 +20,6 @@ __all__ = [
     'local_rank',
     'local_world_size',
     'local_node',
-    'print_worker',
-    'print_root',
     'all_gather_object',
     'gather_object',
     'broadcast_object',
@@ -133,7 +131,10 @@ def rank():
     Returns the rank of the current process.
     """
 
-    return _WorkerInfo.RANK
+    if _WorkerInfo.RANK is None:
+        return dist.get_rank()
+    else:
+        return _WorkerInfo.RANK
 
 
 def world_size():
@@ -141,7 +142,10 @@ def world_size():
     Returns the total number of processes.
     """
 
-    return _WorkerInfo.WORLD_SIZE
+    if _WorkerInfo.WORLD_SIZE is None:
+        return dist.get_world_size()
+    else:
+        return _WorkerInfo.WORLD_SIZE
 
 
 def local_rank():
@@ -175,48 +179,6 @@ def local_node():
     """
 
     return _WorkerInfo.NODE_ID
-
-
-def print_worker(*values, sep=' ', end="\n", file=None, flush=True, barrier=False):
-    """
-    Print the values to a stream, default sys.stdout, with additional information about the worker.
-
-    Args:
-        values (Any): The values to print.
-        sep (str, optional): The separator between arguments. Default is a space.
-        end (str, optional): The string to append at the end of the message. Default is a newline.
-        file (file, optional): The file to write the message to. Default is None.
-        flush (bool, optional): If True, the output buffer is flushed. Default is True.
-        barrier (bool, optional): If True, a barrier is inserted before and after printing. Default is False.
-    """
-
-    if barrier:
-        dist.barrier()
-    modified_values = [f'Worker {rank()}']
-    if local_node() is not None:
-        modified_values += [f'({local_node()}.{local_rank()})']
-    modified_values.extend(values)
-    print(*modified_values, sep=sep, end=end, file=file, flush=flush)
-    if barrier:
-        dist.barrier()
-
-
-@root_only
-def print_root(*values, sep=' ', end="\n", file=None, flush=True):
-    """
-    Print the values to a stream if the current rank is the root rank.
-
-    Default is to print to the standard output stream.
-
-    Args:
-        msg (str): The message to print.
-        sep (str, optional): The separator between arguments. Default is a space.
-        end (str, optional): The string to append at the end of the message. Default is a newline.
-        file (file, optional): The file to write the message to. Default is None.
-        flush (bool, optional): If True, the output buffer is flushed. Default is True.
-    """
-
-    print(*values, sep=sep, end=end, file=file, flush=flush)
 
 
 def all_gather_object(obj, group=None):
@@ -281,18 +243,35 @@ def broadcast_object(obj=None, src=0, group=None, device=None):
     return objlist[0]
 
 
+def _init_process_group_env(**kwargs):
+    """
+    Intialize using "env://" method.
+
+    Reads out helper environment variables to determine local rank and local world size.
+
+    """
+    _WorkerInfo.INIT_METHOD = 'env'
+    _WorkerInfo.RANK = int(os.environ['RANK'])
+    _WorkerInfo.WORLD_SIZE = int(os.environ['WORLD_SIZE'])
+    _WorkerInfo.LOCAL_RANK = int(os.environ['LOCAL_RANK'])
+    _WorkerInfo.LOCAL_WORLD_SIZE = int(os.environ['LOCAL_WORLD_SIZE'])
+    _WorkerInfo.NODE_ID = int(os.environ['GROUP_RANK'])
+
+    dist.init_process_group(init_method='env://', **kwargs)
+
+
 def _init_process_group_dummy(**kwargs):
     """
     Initializes the process group with a single process.
-    Uses HashStore under the hood. Useful for applications that
-    only run on a single gpu.
+
+    Uses HashStore under the hood. Useful for applications that only run on a single GPU.
     """
     _WorkerInfo.INIT_METHOD = 'dummy'
-    _WorkerInfo.RANK = 0
-    _WorkerInfo.WORLD_SIZE = 1
-    _WorkerInfo.LOCAL_RANK = 0
-    _WorkerInfo.LOCAL_WORLD_SIZE = 1
-    _WorkerInfo.NODE_ID = 0
+    _WorkerInfo.RANK = os.environ['RANK']
+    _WorkerInfo.WORLD_SIZE = os.environ['WORLD_SIZE']
+    _WorkerInfo.LOCAL_RANK = os.environ['LOCAL_RANK']
+    _WorkerInfo.LOCAL_WORLD_SIZE = os.environ['LOCAL_WORLD_SIZE']
+    _WorkerInfo.NODE_ID = os.environ['GROUP_RANK']
 
     backend = kwargs.get('backend', None)
     if backend is None:
@@ -375,9 +354,8 @@ def _init_process_group_auto(verbose=True, **kwargs):
     3. Otherwise, a dummy process group with a single process is used (no distributed training)
     """
 
-    # determine init method
     if has_environment():
-        dist.init_process_group(init_method='env://', **kwargs)
+        _init_process_group_env(**kwargs)
     elif has_slurm():
         _init_process_group_slurm(**kwargs)
     elif has_mpi():
@@ -421,7 +399,7 @@ def init(kind='auto'):
     elif kind == 'mpi':
         _init_process_group_MPI()
     elif kind == 'env':
-        dist.init_process_group(init_method='env://')
+        _init_process_group_env()
 
 
 def deinitialize_torch_distributed():

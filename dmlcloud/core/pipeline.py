@@ -1,6 +1,7 @@
 import logging
 import warnings
 from datetime import datetime, timedelta
+from functools import cached_property
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import torch
@@ -39,7 +40,6 @@ class TrainingPipeline:
         self.io_redirector = None
         self.resumed = None
         self.tracker = MetricTracker()
-        self.device = None
         self.start_time = None
         self.stop_time = None
         self.current_stage = None
@@ -219,6 +219,20 @@ class TrainingPipeline:
     def resume_run(self):
         pass
 
+    @cached_property
+    def device(self):
+        if torch.cuda.is_available():
+            if local_rank() is None:
+                warnings.warn(
+                    'CUDA is available but no local rank found. Make sure to set CUDA_VISIBLE_DEVICES manually for each rank.'
+                )
+                return torch.device('cuda')
+            else:
+                return torch.device('cuda', local_rank())
+        else:
+            warnings.warn('CUDA is not available. Running on CPU.')
+            return torch.device('cpu')
+
     def _pre_run(self):
         if len(self.stages) == 0:
             raise ValueError('No stages defined. Use append_stage() to add stages to the pipeline.')
@@ -232,19 +246,6 @@ class TrainingPipeline:
             self.gloo_group = dist.new_group(backend='gloo')
         else:
             warnings.warn('Gloo backend not available. Barriers will not use custom timeouts.')
-
-        if torch.cuda.is_available():
-            if local_rank() is None:
-                warnings.warn(
-                    'CUDA is available but no local rank found. Make sure to set CUDA_VISIBLE_DEVICES manually for each rank.'
-                )
-                self.device = torch.device('cuda')
-            else:
-                self.device = torch.device('cuda', local_rank())
-                torch.cuda.set_device(local_rank())
-        else:
-            warnings.warn('CUDA is not available. Running on CPU.')
-            self.device = torch.device('cpu')
 
         self.barrier(
             timeout=10 * 60
