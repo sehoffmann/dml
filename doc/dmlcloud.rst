@@ -5,6 +5,9 @@ dmlcloud
 
 This the API reference for the dmlcloud package.
 
+Core
+----
+
 .. autosummary::
     :toctree: generated
 
@@ -13,19 +16,39 @@ This the API reference for the dmlcloud package.
     TrainValStage
 
 
-Initialization
---------------
-.. autosummary::
-    :toctree: generated
+torch.distributed helpers
+-------------------------
+dmlcloud provides a set of helper functions to simplify the use of torch.distributed.
 
-    init_process_group_dummy
-    init_process_group_slurm
-    init_process_group_MPI
-    init_process_group_auto
+.. autosummary::
+   :toctree: generated
+
+    init
+
+    is_root
+    root_only
+    root_first
+
+    rank
+    world_size
+    local_rank
+    local_world_size
+    local_node
+
+    all_gather_object
+    gather_object
+    broadcast_object
+
+    has_slurm
+    has_environment
+    has_mpi
+
+    print_worker
+    print_root
 
 
 Metric Tracking
---------------
+---------------
 .. autosummary::
     :toctree: generated
 
@@ -33,26 +56,3 @@ Metric Tracking
     MetricTracker
     reduce_tensor
     Reduction
-
-
-Distributed Helpers
--------------------
-.. autosummary::
-   :toctree: generated
-
-    has_slurm
-    has_environment
-    has_mpi
-    is_root
-    root_only
-    root_first
-    rank
-    world_size
-    local_rank
-    local_world_size
-    local_node
-    print_worker
-    print_root
-    all_gather_object
-    gather_object
-    broadcast_object
