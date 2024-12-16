@@ -31,6 +31,8 @@ __all__ = [
     'critical',
     'setup_logger',
     'reset_logger',
+    'print_worker',
+    'print_root',
 ]
 
 
