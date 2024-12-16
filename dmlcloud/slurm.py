@@ -7,9 +7,7 @@ import os
 
 
 def slurm_job_id():
-    """
-    
-    """
+    """ """
     return os.environ.get('SLURM_JOB_ID')
 
 

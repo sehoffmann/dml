@@ -11,6 +11,7 @@ __all__ = [
     'MetricTracker',
 ]
 
+
 class Reduction(Enum):
     """
     Reduction operation

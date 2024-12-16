@@ -25,5 +25,3 @@ pip install dmlcloud
 ## Documentation
 
 You can find the official documentation at [Read the Docs](https://dmlcloud.readthedocs.io/en/latest/)
-
-

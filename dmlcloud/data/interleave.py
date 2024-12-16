@@ -1,10 +1,12 @@
 from typing import Iterable
+
 import torch
 
 __all__ = [
     'interleave_batches',
     'interleave_dict_batches',
 ]
+
 
 def interleave_batches(
     iterable: Iterable[torch.Tensor], num_batches: int, pin_memory: bool = False

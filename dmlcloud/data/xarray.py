@@ -1,7 +1,8 @@
 from typing import Iterable
+
 import torch.distributed as dist
-from torch.utils.data import IterableDataset, get_worker_info
 import xarray as xr
+from torch.utils.data import get_worker_info, IterableDataset
 
 from .sharding import chunk_and_shard_indices
 

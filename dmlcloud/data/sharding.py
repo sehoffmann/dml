@@ -2,6 +2,7 @@
 
 
 from typing import Sequence
+
 import numpy as np
 
 __all__ = [
@@ -9,6 +10,7 @@ __all__ = [
     'shard_sequence',
     'chunk_and_shard_indices',
 ]
+
 
 def shard_indices(
     num_elements: int,

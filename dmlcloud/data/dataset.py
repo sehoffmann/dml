@@ -1,8 +1,8 @@
-from typing import Sequence, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from typing import Iterable, Sequence
 
 import torch.distributed as dist
-from torch.utils.data import IterableDataset, get_worker_info
+from torch.utils.data import get_worker_info, IterableDataset
 
 from .sharding import shard_sequence
 

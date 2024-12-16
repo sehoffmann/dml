@@ -80,6 +80,7 @@ def run_in_project(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwar
     cwd = project_dir()
     return subprocess.run(cmd, cwd=cwd, stdout=stdout, stderr=stderr, **kwargs)
 
+
 def git_hash(short=False):
     if short:
         process = run_in_project(['git', 'rev-parse', '--short', 'HEAD'])

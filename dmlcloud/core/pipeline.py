@@ -10,11 +10,11 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, Dataset
 
 from dmlcloud.util.wandb import wandb, wandb_is_initialized, wandb_set_startup_timeout
+from ..util.logging import add_log_handlers, experiment_header, general_diagnostics, IORedirector
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
+from .distributed import all_gather_object, broadcast_object, is_root, local_rank, root_only
 from .metrics import MetricTracker, Reduction
 from .stage import Stage
-from .distributed import all_gather_object, broadcast_object, is_root, local_rank, root_only
-from ..util.logging import add_log_handlers, experiment_header, general_diagnostics, IORedirector
 
 
 __all__ = [
