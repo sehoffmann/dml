@@ -146,7 +146,7 @@ class Stage:
 
     def _pre_stage(self):
         self.start_time = datetime.now()
-        self.table = ProgressTable(file=sys.stdout if is_root else DevNullIO())
+        self.table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
         self._setup_table()
         if len(self.pipeline.stages) > 1:
             self.logger.info(f'\n========== STAGE: {self.name} ==========')

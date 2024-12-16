@@ -56,7 +56,7 @@ class MNISTStage(dml.TrainValStage):
 
 
 def main():
-    dml.init_process_group_auto()
+    dml.init()
     pipeline = dml.TrainingPipeline(name='mnist')
     pipeline.enable_checkpointing('checkpoints', resume=False)
     pipeline.enable_wandb()
