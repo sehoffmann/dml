@@ -35,6 +35,11 @@ class MNISTStage(dml.Stage):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         self.loss = nn.CrossEntropyLoss()
 
+        self.add_column('[Train] Loss', 'train/loss', color='green')
+        self.add_column('[Train] Acc.', 'train/accuracy', color='green')
+        self.add_column('[Val] Loss', 'val/loss', color='blue')
+        self.add_column('[Val] Acc.', 'val/accuracy', color='blue')
+
     def run_epoch(self):
         self._train_epoch()
         self._val_epoch()
@@ -71,14 +76,6 @@ class MNISTStage(dml.Stage):
     def _log_metrics(self, img, target, output, loss):
         self.track_reduce('loss', loss)
         self.track_reduce('accuracy', (output.argmax(1) == target).float().mean())
-
-    def table_columns(self):
-        columns = super().table_columns()
-        columns.insert(1, {'name': '[Train] Loss', 'metric': 'train/loss'})
-        columns.insert(2, {'name': '[Val] Loss', 'metric': 'val/loss'})
-        columns.insert(3, {'name': '[Train] Acc.', 'metric': 'train/accuracy'})
-        columns.insert(4, {'name': '[Val] Acc.', 'metric': 'val/accuracy'})
-        return columns
 
 
 def main():

@@ -1,6 +1,6 @@
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -39,8 +39,10 @@ class Stage:
         self._stop_requested = False
 
         self.metric_prefix = None
-        self.table = None
         self.barrier_timeout = None
+
+        self.table = None
+        self.columns = {}
 
     @property
     def tracker(self) -> MetricTracker:
@@ -72,6 +74,17 @@ class Stage:
         if prefixed and self.metric_prefix:
             name = f'{self.metric_prefix}/{name}'
         self.pipeline.track(name, value, step)
+
+    def add_column(
+        self,
+        name: str,
+        metric: Optional[str] = None,
+        width: Optional[int] = None,
+        color: Optional[str] = None,
+        alignment: Optional[str] = None,
+    ):
+        self.columns[name] = metric
+        self.table.add_column(name, width=width, color=color, alignment=alignment)
 
     def stop_stage(self):
         self._stop_requested = True
@@ -108,25 +121,6 @@ class Stage:
         """
         raise NotImplementedError()
 
-    def table_columns(self) -> List[Union[str, Dict[str, Any]]]:
-        """
-        Override this method to customize the metrics displayed in the progress table.
-
-        Should return a list containing either strings or dicts.
-        If a string, it will be used as both the display name and the metric name.
-        If a dict, it should contain a 'name' key and a 'metric' key.
-        The 'name' key will be used as the display name, and the 'metric' key will be used as the metric name.
-        Additional keys are forwarded to the ProgressTable.add_column method.
-        If 'metric' is None, then the user is responsible for updating the column manually.
-        """
-        columns = [
-            {'name': 'Epoch', 'metric': 'misc/epoch'},
-            {'name': 'Time/Epoch', 'metric': None},
-        ]
-        if self.max_epochs is not None:
-            columns.append({'name': 'ETA', 'metric': None})
-        return columns
-
     def run(self):
         """
         Runs this stage. Either until max_epochs are reached, or until stop_stage() is called.
@@ -142,10 +136,13 @@ class Stage:
 
     def _pre_stage(self):
         self.start_time = datetime.now()
-        self.table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
-        self._setup_table()
         if len(self.pipeline.stages) > 1:
             dml_logging.info(f'\n========== STAGE: {self.name} ==========')
+
+        self.table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
+        self.add_column('Epoch', 'misc/epoch', color='bright', width=5)
+        self.add_column('Took', None, width=7)
+        self.add_column('ETA', None, width=7)
 
         self.pre_stage()
 
@@ -183,39 +180,21 @@ class Stage:
         self.tracker.next_epoch()
         pass
 
-    def _setup_table(self):
-        for column_dct in self._metrics():
-            display_name = column_dct.pop('name')
-            column_dct.pop('metric')
-            self.table.add_column(display_name, **column_dct)
-
     def _update_table(self):
         self.table.update('Epoch', self.current_epoch)
-        self.table.update('Time/Epoch', (datetime.now() - self.start_time) / self.current_epoch)
-        self.table.update(
-            'ETA', (datetime.now() - self.start_time) / self.current_epoch * (self.max_epochs - self.current_epoch)
-        )
-        for column_dct in self._metrics():
-            display_name = column_dct['name']
-            metric_name = column_dct['metric']
-            if metric_name is not None:
-                self.table.update(display_name, self.tracker[metric_name][-1])
-        self.table.next_row()
 
-    def _metrics(self):
-        metrics = []
-        for column in self.table_columns():
-            if isinstance(column, str):
-                metrics.append({'name': column, 'metric': column})
-            elif isinstance(column, dict):
-                if 'name' not in column:
-                    raise ValueError('Column dict must contain a "name" key')
-                if 'metric' not in column:
-                    raise ValueError('Column dict must contain a "metric" key')
-                metrics.append(column)
-            else:
-                raise ValueError(f'Invalid column: {column}. Must be a string or a dict.')
-        return metrics
+        time = datetime.now() - self.epoch_start_time
+        self.table.update('Took', str(time - timedelta(microseconds=time.microseconds)))
+
+        per_epoch = (datetime.now() - self.start_time) / self.current_epoch
+        eta = per_epoch * (self.max_epochs - self.current_epoch)
+        self.table.update('ETA', str(eta - timedelta(microseconds=eta.microseconds)))
+
+        for name, metric in self.columns.items():
+            if metric is not None:
+                self.table.update(name, self.tracker[metric][-1])
+
+        self.table.next_row()
 
 
 class TrainValStage(Stage):
