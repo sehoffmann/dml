@@ -31,6 +31,7 @@ __all__ = [
     'critical',
     'setup_logger',
     'reset_logger',
+    'flush_logger',
     'print_worker',
     'print_root',
 ]
@@ -79,6 +80,20 @@ def reset_logger():
     to_remove = list(logger.handlers)
     for handler in to_remove:
         logger.removeHandler(handler)
+
+
+def flush_logger(logger: logging.Logger = None):
+    """
+    Flushes all handlers of the given logger.
+
+    Args:
+        logger (logging.Logger, optional): The logger to flush. Default is the dmlcloud logger.
+    """
+    if logger is None:
+        logger = sys.modules[__name__].logger
+
+    for handler in logger.handlers:
+        handler.flush()
 
 
 def log(level, msg, *args, exc_info=None, stack_info=False, extra=None):

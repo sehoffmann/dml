@@ -90,32 +90,6 @@ class DevNullIO(io.TextIOBase):
         pass
 
 
-def add_log_handlers(logger: logging.Logger):
-    if logger.hasHandlers():
-        return
-
-    logger.setLevel(logging.INFO if dist.get_rank() == 0 else logging.WARNING)
-
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(logging.DEBUG)
-    stdout_handler.addFilter(lambda record: record.levelno < logging.WARNING)
-    stdout_handler.setFormatter(logging.Formatter())
-    logger.addHandler(stdout_handler)
-
-    stderr_handler = logging.StreamHandler()
-    stderr_handler.setLevel(logging.WARNING)
-    stderr_handler.setFormatter(logging.Formatter())
-    logger.addHandler(stderr_handler)
-
-
-def flush_log_handlers(logger: logging.Logger):
-    """
-    Flushes all handlers of the given logger.
-    """
-    for handler in logger.handlers:
-        handler.flush()
-
-
 def experiment_header(
     name: str | None,
     checkpoint_dir: str | None,

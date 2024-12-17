@@ -11,7 +11,8 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, Dataset
 
 from dmlcloud.util.wandb import wandb, wandb_is_initialized, wandb_set_startup_timeout
-from ..util.logging import add_log_handlers, experiment_header, general_diagnostics, IORedirector
+from ..util.logging import experiment_header, general_diagnostics, IORedirector
+from . import logging as dml_logging
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
 from .distributed import all_gather_object, broadcast_object, init, is_root, local_rank, root_only
 from .metrics import MetricTracker, Reduction
@@ -34,7 +35,6 @@ class TrainingPipeline:
 
         self.name = name
 
-        self.logger = logging.getLogger('dmlcloud')
         self.checkpoint_dir = None
         self.gloo_group = None
         self.io_redirector = None
@@ -84,7 +84,7 @@ class TrainingPipeline:
             msg += f'    - Parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.1f} kk\n'
             msg += f'    - DDP: {use_ddp}\n'
             msg += f'    - {model}'
-            self.logger.info(msg)
+            dml_logging.info(msg)
 
     def register_optimizer(self, name: str, optimizer, scheduler=None):
         if name in self.optimizers:
@@ -107,7 +107,7 @@ class TrainingPipeline:
             except TypeError:  # __len__ not implemented
                 msg += '    - Batches (Total): N/A\n'
                 msg += '    - Batches (/Worker): N/A\n'
-            self.logger.info(msg)
+            dml_logging.info(msg)
 
     def append_stage(self, stage: Stage, max_epochs: Optional[int] = None, name: Optional[str] = None):
         if not isinstance(stage, Stage):
@@ -257,9 +257,8 @@ class TrainingPipeline:
         self.barrier(timeout=10 * 60)  # make sure everything is set up before starting the run
         self.start_time = datetime.now()
 
-        add_log_handlers(self.logger)
         header = '\n' + experiment_header(self.name, self.checkpoint_dir, self.start_time)
-        self.logger.info(header)
+        dml_logging.info(header)
 
         if self.resumed:
             self._resume_run()
@@ -273,7 +272,7 @@ class TrainingPipeline:
         diagnostics += '\n* CONFIG:\n'
         diagnostics += '\n'.join(f'    {line}' for line in OmegaConf.to_yaml(self.config, resolve=True).splitlines())
 
-        self.logger.info(diagnostics)
+        dml_logging.info(diagnostics)
 
         self.pre_run()
 
@@ -286,14 +285,14 @@ class TrainingPipeline:
         self.io_redirector.install()
 
     def _resume_run(self):
-        self.logger.info(f'Resuming training from checkpoint: {self.checkpoint_dir}')
+        dml_logging.info(f'Resuming training from checkpoint: {self.checkpoint_dir}')
         self.resume_run()
 
     def _post_run(self):
         self.stop_time = datetime.now()
-        self.logger.info(f'Finished training in {self.stop_time - self.start_time} ({self.stop_time})')
+        dml_logging.info(f'Finished training in {self.stop_time - self.start_time} ({self.stop_time})')
         if self.checkpointing_enabled:
-            self.logger.info(f'Outputs have been saved to {self.checkpoint_dir}')
+            dml_logging.info(f'Outputs have been saved to {self.checkpoint_dir}')
         self.post_run()
 
     def _pre_epoch(self):
@@ -309,9 +308,9 @@ class TrainingPipeline:
         Called by _RunGuard to ensure that the pipeline is properly cleaned up
         """
         if exc_type is KeyboardInterrupt:
-            self.logger.info('------- Training interrupted by user -------')
+            dml_logging.info('------- Training interrupted by user -------')
         elif exc_type is not None:
-            self.logger.error(
+            dml_logging.error(
                 '------- Training failed with an exception -------', exc_info=(exc_type, exc_value, traceback)
             )
 

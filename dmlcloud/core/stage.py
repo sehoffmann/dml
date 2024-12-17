@@ -6,10 +6,10 @@ from typing import Any, Dict, List, Optional, Union
 import torch
 from progress_table import ProgressTable
 
-from ..util.logging import DevNullIO, flush_log_handlers
+from ..util.logging import DevNullIO
+from . import logging as dml_logging
 from .distributed import is_root
 from .metrics import MetricTracker, Reduction
-
 
 __all__ = [
     'Stage',
@@ -45,10 +45,6 @@ class Stage:
     @property
     def tracker(self) -> MetricTracker:
         return self.pipeline.tracker
-
-    @property
-    def logger(self):
-        return self.pipeline.logger
 
     @property
     def device(self):
@@ -149,11 +145,11 @@ class Stage:
         self.table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
         self._setup_table()
         if len(self.pipeline.stages) > 1:
-            self.logger.info(f'\n========== STAGE: {self.name} ==========')
+            dml_logging.info(f'\n========== STAGE: {self.name} ==========')
 
         self.pre_stage()
 
-        flush_log_handlers(self.logger)
+        dml_logging.flush_logger()
 
         self.pipeline.barrier(self.barrier_timeout)
 
@@ -163,7 +159,7 @@ class Stage:
         self.pipeline.barrier(self.barrier_timeout)
         self.stop_time = datetime.now()
         if len(self.pipeline.stages) > 1:
-            self.logger.info(f'Finished stage in {self.stop_time - self.start_time}')
+            dml_logging.info(f'Finished stage in {self.stop_time - self.start_time}')
 
     def _pre_epoch(self):
         self.epoch_start_time = datetime.now()
