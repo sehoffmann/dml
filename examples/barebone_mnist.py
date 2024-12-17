@@ -82,8 +82,6 @@ class MNISTStage(dml.Stage):
 
 
 def main():
-    dml.init()
-
     pipeline = dml.TrainingPipeline()
     pipeline.append_stage(MNISTStage(), max_epochs=3)
     pipeline.run()
