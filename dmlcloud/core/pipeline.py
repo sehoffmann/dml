@@ -57,35 +57,6 @@ class TrainingPipeline:
     def checkpointing_enabled(self):
         return self.checkpoint_dir is not None
 
-    def register_model(
-        self,
-        name: str,
-        model: torch.nn.Module,
-        use_ddp: bool = True,
-        sync_bn: bool = False,
-        save_latest: bool = True,
-        save_interval: Optional[int] = None,
-        save_best: bool = False,
-        best_metric: str = 'val/loss',
-        verbose: bool = True,
-    ):
-        if name in self.models:
-            raise ValueError(f'Model with name {name} already exists')
-        model = model.to(self.device)  # Doing it in this order is important for SyncBN
-        if sync_bn:
-            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        if use_ddp:
-            device_ids = [self.device] if self.device.type == 'cuda' else None  # Must be None for cpu devices
-            model = DistributedDataParallel(model, broadcast_buffers=False, device_ids=device_ids)
-        self.models[name] = model
-
-        if verbose:
-            msg = f'Model "{name}":\n'
-            msg += f'    - Parameters: {sum(p.numel() for p in model.parameters()) / 1e6:.1f} kk\n'
-            msg += f'    - DDP: {use_ddp}\n'
-            msg += f'    - {model}'
-            dml_logging.info(msg)
-
     def register_optimizer(self, name: str, optimizer, scheduler=None):
         if name in self.optimizers:
             raise ValueError(f'Optimizer with name {name} already exists')

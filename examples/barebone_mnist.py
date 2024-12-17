@@ -31,7 +31,8 @@ class MNISTStage(dml.Stage):
             nn.MaxPool2d(2),
             nn.Flatten(),
             nn.Linear(784, 10),
-        ).to(self.pipeline.device)
+        )
+        self.model = dml.wrap_ddp(self.model, self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         self.loss = nn.CrossEntropyLoss()
 

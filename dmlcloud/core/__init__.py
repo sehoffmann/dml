@@ -3,6 +3,7 @@ from .stage import *
 from .distributed import *
 from .metrics import *
 from .logging import *
+from .model import *
 
 __all__ = []
 
@@ -18,3 +19,6 @@ __all__ += metrics.__all__
 
 # Logging
 __all__ += logging.__all__
+
+# Model helpers
+__all__ += model.__all__
