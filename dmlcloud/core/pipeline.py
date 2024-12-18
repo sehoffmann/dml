@@ -78,13 +78,11 @@ class Pipeline:
                 msg += '    - Batches (/Worker): N/A\n'
             dml_logging.info(msg)
 
-    def append_stage(self, stage: Stage, max_epochs: Optional[int] = None, name: Optional[str] = None):
+    def append(self, stage: Stage):
         if not isinstance(stage, Stage):
             raise ValueError('stage must be a Stage object')
 
         stage.pipe = self
-        stage.max_epochs = max_epochs
-        stage.name = name
         self.stages.append(stage)
 
     def enable_checkpointing(

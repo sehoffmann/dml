@@ -23,10 +23,11 @@ class Stage:
         - post_epoch()
     """
 
-    def __init__(self):
+    def __init__(self, name: str = None, epochs: int = 1):
+        self.name = name or self.__class__.__name__
+        self.max_epochs = epochs
+
         self.pipe = None  # set by the pipeline
-        self.max_epochs = None  # set by the pipeline
-        self.name = None  # set by the pipeline
 
         self.history = TrainingHistory()
         self.tracker = Tracker()
