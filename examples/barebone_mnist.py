@@ -4,6 +4,7 @@ sys.path.insert(0, './')
 
 import dmlcloud as dml
 import torch
+import torchmetrics
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
@@ -56,6 +57,9 @@ class MNISTStage(dml.Stage):
         self.add_column('[Val] Loss', 'val/loss', color='blue')
         self.add_column('[Val] Acc.', 'val/accuracy', color='blue')
 
+        self.train_acc = self.add_metric('train/accuracy', torchmetrics.Accuracy('multiclass', num_classes=10))
+        self.val_acc = self.add_metric('val/accuracy', torchmetrics.Accuracy('multiclass', num_classes=10))
+
     # The run_epoch method is called once per epoch
     def run_epoch(self):
         self._train_epoch()
@@ -75,7 +79,9 @@ class MNISTStage(dml.Stage):
             loss.backward()
             self.optimizer.step()
 
-            self._log_metrics(img, target, output, loss)
+            self.log('loss', loss)
+            # self.log('accuracy', (output.argmax(1) == target).float().mean())
+            self.train_acc(output, target)
 
     @torch.no_grad()
     def _val_epoch(self):
@@ -88,11 +94,9 @@ class MNISTStage(dml.Stage):
             output = self.model(img)
             loss = self.loss(output, target)
 
-            self._log_metrics(img, target, output, loss)
-
-    def _log_metrics(self, img, target, output, loss):
-        self.track_reduce('loss', loss)
-        self.track_reduce('accuracy', (output.argmax(1) == target).float().mean())
+            self.log('loss', loss)
+            # self.log('accuracy', (output.argmax(1) == target).float().mean())
+            self.val_acc(output, target)
 
 
 def main():

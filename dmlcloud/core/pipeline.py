@@ -15,7 +15,6 @@ from ..util.logging import experiment_header, general_diagnostics, IORedirector
 from . import logging as dml_logging
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
 from .distributed import all_gather_object, broadcast_object, init, is_root, local_rank, root_only
-from .metrics import MetricTracker, Reduction
 from .stage import Stage
 
 
@@ -39,7 +38,6 @@ class TrainingPipeline:
         self.gloo_group = None
         self.io_redirector = None
         self.resumed = None
-        self.tracker = MetricTracker()
         self.start_time = None
         self.stop_time = None
         self.current_stage = None
@@ -138,31 +136,6 @@ class TrainingPipeline:
 
         self._wandb_initalizer = initializer
         self.wandb = True
-
-    def track_reduce(
-        self,
-        name: str,
-        value: torch.Tensor,
-        step: Optional[int] = None,
-        reduction: Reduction = Reduction.MEAN,
-        dim: Optional[List[int]] = None,
-        reduce_globally: bool = True,
-    ):
-        if name not in self.tracker:
-            self.tracker.register_metric(name, reduction, dim, reduce_globally)
-
-        self.tracker.track(name, value)
-
-    def track(
-        self,
-        name: str,
-        value: Any,
-        step: Optional[int] = None,
-    ):
-        if name not in self.tracker:
-            self.tracker.register_metric(name)
-
-        self.tracker.track(name, value)
 
     def barrier(self, timeout=None):
         if self.gloo_group is None:
@@ -265,14 +238,6 @@ class TrainingPipeline:
         if self.checkpointing_enabled:
             dml_logging.info(f'Outputs have been saved to {self.checkpoint_dir}')
         self.post_run()
-
-    def _pre_epoch(self):
-        pass
-
-    def _post_epoch(self):
-        if self.wandb and is_root():
-            metrics = {name: self.tracker[name][-1] for name in self.tracker}
-            wandb.log(metrics)
 
     def _cleanup(self, exc_type, exc_value, traceback):
         """

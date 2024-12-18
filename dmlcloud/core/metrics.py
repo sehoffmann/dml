@@ -1,326 +1,214 @@
+from collections import namedtuple
 from enum import Enum
+from typing import Any, Union
 
+import numpy as np
 import torch
-import torch.distributed as dist
+import torchmetrics
+from numpy.typing import ArrayLike
 
 
 __all__ = [
-    'Reduction',
-    'reduce_tensor',
-    'MetricReducer',
-    'MetricTracker',
+    'TrainingHistory',
+    'Tracker',
 ]
 
 
-class Reduction(Enum):
+class TrainingHistory:
     """
-    Reduction operation
-    """
+    Stores the training history of a model.
 
-    MEAN = 'MEAN'
-    SUM = 'SUM'
-    MIN = 'MIN'
-    MAX = 'MAX'
-
-    def as_torch(self):
-        """
-        Returns the corresponding torch.distribution.ReduceOp
-        """
-
-        if self == Reduction.SUM:
-            return dist.ReduceOp.SUM
-        elif self == Reduction.MIN:
-            return dist.ReduceOp.MIN
-        elif self == Reduction.MAX:
-            return dist.ReduceOp.MAX
-        else:
-            raise ValueError(f'Reduction {self} is not supported by torch')
-
-
-def reduce_tensor(tensor: torch.Tensor, reduction: Reduction, dim=None):
-    """
-    Reduces tensor along dim with the given reduction.
-    """
-
-    if not isinstance(tensor, torch.Tensor):
-        raise ValueError('tensor must be a torch.Tensor')
-
-    # required because dim=None is not supported by torch
-    if dim is None:
-        dim = list(range(tensor.dim()))
-
-    if reduction is Reduction.MEAN:
-        return tensor.mean(dim)
-    elif reduction is Reduction.SUM:
-        return tensor.sum(dim)
-    elif reduction is Reduction.MIN:
-        return tensor.amin(dim)
-    elif reduction is Reduction.MAX:
-        return tensor.amax(dim)
-    else:
-        raise ValueError(f'Unknown reduction {reduction}')
-
-
-class MetricReducer:
-    """
-    Stores a list of tensors and reduces them at the end of an epoch.
-    The dim argument specifies the dimensions to reduce over. If None, every dimension is completely reduced.
-    Notice that the list of individual tensors stored in this obcect, is ALWAYS reduced, both locally and distributed.
-    Hence, dimension 0 refers to the first dimension of individual tensors, which is usually the batch dimension.
-    """
-
-    def __init__(self, reduction=Reduction.MEAN, dim=None, globally=True):
-        if reduction not in [Reduction.MEAN, Reduction.SUM, Reduction.MIN, Reduction.MAX]:
-            raise ValueError(f'Unknown reduction {self.reduction}')
-
-        self.values = []
-        self.reduction = reduction
-        self.globally = globally
-        if isinstance(dim, int):
-            self.dim = [dim]
-        elif dim is not None:
-            self.dim = list(dim)
-        else:
-            self.dim = None
-
-    def append(self, value):
-        """
-        Appends a value to the list of values.
-        If the value is a tensor, it is detached and moved to the cpu to avoid growing memory consumption.
-        """
-        value = torch.as_tensor(value)
-        value = value.detach().cpu()
-        self.values.append(value)
-
-    def extend(self, values):
-        for value in values:
-            self.append(value)
-
-    def __iadd__(self, value):
-        self.append(value)
-        return self
-
-    def __setitem__(self, idx, value):
-        value = torch.as_tensor(value)
-        value = value.detach().cpu()
-        self.values[idx] = value
-
-    def __getitem__(self, idx):
-        return self.values[idx]
-
-    def __delitem__(self, idx):
-        del self.values[idx]
-
-    def __len__(self):
-        return len(self.values)
-
-    def __iter__(self):
-        return iter(self.values)
-
-    def clear(self):
-        self.values.clear()
-
-    def reduce_and_append(self, value):
-        value = reduce_tensor(value, self.reduction, dim=self.dim)
-        self.values.append(value)
-
-    def reduce_locally(self):
-        if len(self.values) == 0:
-            return None
-
-        if isinstance(self.dim, list):
-            dim = [0] + [d + 1 for d in self.dim]
-        elif isinstance(self.dim, int):
-            dim = [0, self.dim + 1]
-        else:
-            dim = None
-        tensor = torch.stack(self.values)
-        tensor = reduce_tensor(tensor, reduction=self.reduction, dim=dim)
-        return tensor
-
-    def reduce_globally(self, group=None):
-        # if the list of values is empty, the result is None
-        if self.globally:
-            empty_workers = [None] * dist.get_world_size(group)
-            dist.all_gather_object(empty_workers, len(self.values) == 0, group=group)
-            if any(empty_workers):
-                if len(empty_workers) > 1 and not all(empty_workers):
-                    raise ValueError('Some workers tracked values this epoch and some did not. This is likely a bug.')
-                else:
-                    return None
-        elif len(self.values) == 0:
-            return None
-
-        tensor = self.reduce_locally()
-        if self.globally:
-            if self.reduction == Reduction.MEAN:
-                dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=group)
-                tensor /= dist.get_world_size(group)
-            else:
-                dist.all_reduce(tensor, op=self.reduction.as_torch(), group=group)
-        return tensor
-
-    def state_dict(self):
-        return {
-            'reduction': self.reduction,
-            'dim': self.dim,
-            'globally': self.globally,
-            'values': self.values,
-        }
-
-    def load_state_dict(self, state):
-        self.reduction = state['reduction']
-        self.dim = state['dim']
-        self.globally = state['globally']
-        self.values = state['values']
-
-
-class MetricTracker:
-    """
-    This class keeps track of multiple metrics and their history.
+    Metrics can either be ArrayLike objects or any pickleable object.
 
     Usage:
-        tracker = MetricTracker()
-        tracker.register_metric('loss', reduction=Reduction.MEAN)
-        tracker.track('loss', torch.randn(10, 1))
-        tracker.next_epoch()
+        history = TrainingHistory()
+        history.append_metric('loss', 0.5)
+        history.append_metric('accuracy', 0.99)
+        history.next_step()
 
-        print(tracker['loss'].last())
+        for metric in history:
+            print(f'{metric}': history[metric])
     """
 
+    max_return_type = namedtuple('Max', ['value', 'step'])
+    min_return_type = namedtuple('Min', ['value', 'step'])
+
     def __init__(self):
-        self.histories = {}
-        self.reducers = {}
-        self.epoch = 1
+        self.num_steps = 0
+        self._current_values = {}
+        self._metrics = {}
+        self._dtypes = {}
 
-    def __getitem__(self, name):
-        """
-        Returns the history of a metric up to the current epoch.
-        Values for the current epoch that have been reduced already are not included.
-        """
-        if name not in self:
-            raise ValueError(f'Metric {name} does not exist')
-        return list(self.histories[name])[: self.epoch - 1]
+    def __getitem__(self, name: str):
+        if name not in self._metrics:
+            raise KeyError(f'Metric {name} does not exist')
 
-    def __contains__(self, name):
-        return name in self.histories
+        return np.stack(self._metrics[name], axis=0, dtype=self._dtypes[name])
+
+    def __delattr__(self, name):
+        del self._metrics[name]
+
+    def __contains__(self, name: str):
+        return name in self._metrics
 
     def __len__(self):
-        return len(self.histories)
+        return len(self._metrics)
 
     def __iter__(self):
-        return iter(self.histories)
+        return iter(self._metrics)
 
-    def current_value(self, name):
+    def keys(self):
+        return self._metrics.keys()
+
+    def values(self):
+        return [self[name] for name in self._metrics]
+
+    def items(self):
+        return [(name, self[name]) for name in self._metrics]
+
+    def append_metric(self, name: str, value: Union[ArrayLike, Any]):
         """
-        If the metric already has an reduced value for the current epoch, it is returned. Otherwise, None is returned.
+        Adds a value for a metric at the current step.
+
+        Args:
+            name (str): The name of the metric.
+            value (ArrayLike, Any): The value of the metric. Must be a ArrayLike or pickleable object.
         """
-        if name not in self:
-            raise ValueError(f'Metric {name} does not exist')
-        if self.has_value(name):
-            return self.histories[name][-1]
-        else:
-            return None
+        if name in self._current_values:
+            raise ValueError(f'Metric {name} already has a value for step {self.num_steps}')
 
-    def is_reduced_metric(self, name):
-        """
-        Returns True if the metric gets (all)reduced at the end of each epoch.
-        """
-        if name not in self:
-            raise ValueError(f'Metric {name} does not exist')
-        return name in self.reducers
+        if name not in self._metrics and self.num_steps > 0:
+            raise ValueError(f'Cannot add metric {name} after the first step')
 
-    def has_value(self, name):
-        """
-        Returns True if the metric has a final value for the current epoch.
-        """
-        if name not in self:
-            raise ValueError(f'Metric {name} does not exist')
-        return len(self.histories[name]) >= self.epoch
-
-    def register_metric(self, name, reduction=None, dim=None, globally=True):
-        if name in self:
-            raise ValueError(f'Metric {name} already exists')
-
-        if dim is not None and reduction is None:
-            raise ValueError('If dim is specified, reduction must be specified as well')
-
-        self.histories[name] = [] + [None] * (self.epoch - 1)
-        if reduction is not None:
-            self.reducers[name] = MetricReducer(reduction=reduction, dim=dim, globally=globally)
-
-    def track(self, name, value):
         if isinstance(value, torch.Tensor):
             value = value.detach().to('cpu', non_blocking=True)
 
-        if name not in self:
-            raise ValueError(f'Metric {name} does not exist')
+        self._current_values[name] = value
 
-        if self.has_value(name):
-            raise ValueError(f'History for {name} already has a value for epoch {self.epoch}')
-
-        history = self.histories[name]
-        reducer = self.reducers.get(name)
-        if reducer is not None:
-            reducer.append(value)
-        else:
-            history.append(value)
-
-    def reduce_all(self, prefix=None, strict=True):
+    def append_metrics(self, **metrics):
         """
-        Reduces all metrics and appends their reduced values to the history.
-        If prefix is specified, only metrics with the specified prefix are reduced.
-        If strict is True, an error is raised if a metric has already been reduced for the current epoch.
+        Adds multiple metrics at the current step.
 
-        After this method has been called, no more values for the reduced metrics can be tracked for the current epoch,
-        and next_epoch() must be called to be able to track new values.
+        Args:
+            **metrics: The metrics to add.
         """
-        for name, history in self.histories.items():
-            if prefix is not None and not name.startswith(prefix):
-                continue
+        for name, value in metrics.items():
+            self.append_metric(name, value)
 
-            if self.has_value(name):
-                if strict:
-                    raise ValueError(f'History for {name} has already been reduced for epoch {self.epoch}')
-                else:
-                    continue
+    def next_step(self):
+        """
+        Advances the step counter.
+        """
 
-            reducer = self.reducers.get(name)
-            if reducer is not None:
-                history.append(reducer.reduce_globally())
-                reducer.clear()
+        for name in self._metrics:
+            if name not in self._current_values:
+                raise ValueError(f'Metric {name} does not have a value for step {self.num_steps}')
+
+        for name, value in self._current_values.items():
+            if type(value) == ArrayLike:
+                value = np.as_array(value)
+
+            if name not in self._metrics:
+                self._metrics[name] = [value]
+                self._dtypes[name] = value.dtype if type(value) == ArrayLike else object
             else:
-                history.append(None)
+                self._metrics[name].append(value)
 
-    def next_epoch(self):
+        self._current_values = {}
+        self.num_steps += 1
+
+    def last(self) -> dict[str, Any]:
         """
-        Reduces all metrics (if not already reduced) and advances the epoch counter.
+        Returns the last value for each metric.
+
+        Returns:
+            dict[str, Any]: The last value for each metric.
         """
-        self.reduce_all(strict=False)
-        self.epoch += 1
 
-    def state_dict(self):
-        state = {
-            'epoch': self.epoch,
-            'histories': dict(self.histories),
-            'reducers': {name: reducer.state_dict() for name, reducer in self.reducers.items()},
-        }
-        return state
+        return {name: values[-1] for name, values in self._metrics.items()}
 
-    def load_state_dict(self, state):
-        self.epoch = state['epoch']
-        self.histories = state['histories']
-        self.reducers = {}
-        for name, reducer_state in state['reducers'].items():
-            self.reducers[name] = MetricReducer()
-            self.reducers[name].load_state_dict(reducer_state)
+    def current(self) -> dict[str, Any]:
+        """
+        Returns the current, but not yet saved, value for each metric.
 
-    def __str__(self):
-        s = 'MetricTracker('
-        for name, history in self.histories.items():
-            s += f'\n  {name}: {history}'
-        if len(self.histories) > 0:
-            s += '\n)'
-        else:
-            s += ')'
-        return s
+        Returns:
+            dict[str, Any]: The current value for each metric.
+        """
+
+        return {name: self._current_values[name] for name in self._current_values}
+
+    def min(self) -> dict[str, min_return_type]:
+        """
+        Returns a namedtuple (value, step) containing the minimum value and the corresponding step for each metric across all steps.
+
+        Returns:
+            dict[str, namedtuple]: The minimum value and the corresponding step for each metric.
+        """
+        argmin = {name: np.argmin(values, axis=0) for name, values in self._metrics.items()}
+        return {name: self.min_return_type(self._metrics[name][idx], idx) for name, idx in argmin.items()}
+
+    def max(self) -> dict[str, max_return_type]:
+        """
+        Returns a namedtuple (value, step) containing the maximum value and the corresponding step for each metric across all steps.
+
+        Returns:
+            dict[str, namedtuple]: The maximum value and the corresponding step for each metric.
+        """
+        argmax = {name: np.argmax(values, axis=0) for name, values in self._metrics.items()}
+        return {name: self.max_return_type(self._metrics[name][idx], idx) for name, idx in argmax.items()}
+
+
+class Tracker(torch.nn.Module):
+    """
+    Keeps track of multiple metrics and reduces them at the end of each epoch.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.metrics = torch.nn.ModuleDict()
+        self.external_metrics = torch.nn.ModuleDict()
+
+    def add_metric(self, name: str, metric: torchmetrics.Metric):
+        if name in self.external_metrics or name in self.metrics:
+            raise ValueError(f'Metric {name} already exists')
+
+        self.external_metrics[name] = metric
+
+    def log(self, name: str, value: Any, reduction: str = 'mean'):
+        if reduction not in ['mean', 'sum', 'min', 'max']:
+            raise ValueError(f'Invalid reduction {reduction}. Must be one of mean, sum, min, max')
+
+        if name in self.external_metrics:
+            raise ValueError(f'Metric {name} is a external metric. Please use the .update() method yourself.')
+
+        if name not in self.metrics:
+            if reduction == 'mean':
+                metric = torchmetrics.MeanMetric()
+            elif reduction == 'sum':
+                metric = torchmetrics.SumMetric()
+            elif reduction == 'min':
+                metric = torchmetrics.MinMetric()
+            elif reduction == 'max':
+                metric = torchmetrics.MaxMetric()
+            self.metrics[name] = metric.to(value.device)
+
+        self.metrics[name].update(value)
+
+    def reduce(self):
+        values = {}
+        for name, metric in self.metrics.items():
+            values[name] = metric.compute()
+            metric.reset()
+        for name, metric in self.external_metrics.items():
+            values[name] = metric.compute()
+            metric.reset()
+        return values
+
+    def clear(self):
+        for metric in self.metrics.values():
+            metric.reset()
+        for metric in self.external_metrics.values():
+            metric.reset()
+        self.metrics.clear()
+        self.external_metrics.clear()

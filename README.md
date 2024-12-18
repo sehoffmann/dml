@@ -22,7 +22,7 @@ pip install dmlcloud
 
 Alternatively, you can install the latest development version directly from Github:
 ```
-pip install git+https://github.com/tangentlabs/django-oscar-paypal.git@issue/34/oscar-0.6
+pip install git+https://github.com/sehoffmann/dmlcloud.git
 ```
 
 ## Minimal Example

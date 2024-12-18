@@ -3,3 +3,4 @@ numpy
 xarray
 progress_table>=2.2.0
 omegaconf
+torchmetrics

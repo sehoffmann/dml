@@ -1,19 +1,16 @@
 import sys
-import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
-import torch
 from progress_table import ProgressTable
 
 from ..util.logging import DevNullIO
 from . import logging as dml_logging
 from .distributed import is_root
-from .metrics import MetricTracker, Reduction
+from .metrics import Tracker, TrainingHistory
 
 __all__ = [
     'Stage',
-    'TrainValStage',
 ]
 
 
@@ -31,22 +28,19 @@ class Stage:
         self.max_epochs = None  # set by the pipeline
         self.name = None  # set by the pipeline
 
+        self.history = TrainingHistory()
+        self.tracker = Tracker()
+
         self.start_time = None
         self.stop_time = None
         self.epoch_start_time = None
         self.epoch_stop_time = None
-        self.current_epoch = 1
-        self._stop_requested = False
 
         self.metric_prefix = None
         self.barrier_timeout = None
 
         self.table = None
         self.columns = {}
-
-    @property
-    def tracker(self) -> MetricTracker:
-        return self.pipeline.tracker
 
     @property
     def device(self):
@@ -56,24 +50,19 @@ class Stage:
     def config(self):
         return self.pipeline.config
 
-    def track_reduce(
-        self,
-        name: str,
-        value: torch.Tensor,
-        step: Optional[int] = None,
-        reduction: Reduction = Reduction.MEAN,
-        dim: Optional[List[int]] = None,
-        reduce_globally: bool = True,
-        prefixed: bool = True,
-    ):
-        if prefixed and self.metric_prefix:
-            name = f'{self.metric_prefix}/{name}'
-        self.pipeline.track_reduce(name, value, step, reduction, dim, reduce_globally)
+    @property
+    def current_epoch(self):
+        return self.history.num_steps
 
-    def track(self, name: str, value, step: Optional[int] = None, prefixed: bool = True):
-        if prefixed and self.metric_prefix:
+    def log(self, name: str, value: Any, reduction: str = 'mean', prefixed: bool = True):
+        if prefixed:
             name = f'{self.metric_prefix}/{name}'
-        self.pipeline.track(name, value, step)
+        self.tracker.log(name, value, reduction)
+
+    def add_metric(self, name, metric):
+        metric = metric.to(self.device)
+        self.tracker.add_metric(name, metric)
+        return metric
 
     def add_column(
         self,
@@ -85,9 +74,6 @@ class Stage:
     ):
         self.columns[name] = metric
         self.table.add_column(name, width=width, color=color, alignment=alignment)
-
-    def stop_stage(self):
-        self._stop_requested = True
 
     def pre_stage(self):
         """
@@ -126,12 +112,10 @@ class Stage:
         Runs this stage. Either until max_epochs are reached, or until stop_stage() is called.
         """
         self._pre_stage()
-        while self.max_epochs is None or self.current_epoch <= self.max_epochs:
+        while self.max_epochs is None or self.current_epoch < self.max_epochs:
             self._pre_epoch()
             self.run_epoch()
             self._post_epoch()
-            if self._stop_requested:
-                break
         self._post_stage()
 
     def _pre_stage(self):
@@ -140,7 +124,7 @@ class Stage:
             dml_logging.info(f'\n========== STAGE: {self.name} ==========')
 
         self.table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
-        self.add_column('Epoch', 'misc/epoch', color='bright', width=5)
+        self.add_column('Epoch', None, color='bright', width=5)
         self.add_column('Took', None, width=7)
         self.add_column('ETA', None, width=7)
 
@@ -162,27 +146,21 @@ class Stage:
         self.epoch_start_time = datetime.now()
         self.table['Epoch'] = self.current_epoch
         self.pre_epoch()
-        self.pipeline._pre_epoch()
 
     def _post_epoch(self):
         self.epoch_stop_time = datetime.now()
         self._reduce_metrics()
         self.post_epoch()
-        self.pipeline._post_epoch()
         self._update_table()
-        self.current_epoch += 1
 
     def _reduce_metrics(self):
-        self.track(name='misc/epoch', value=self.current_epoch, prefixed=False)
-        self.track(
-            name='misc/epoch_time', value=(self.epoch_stop_time - self.epoch_start_time).total_seconds(), prefixed=False
-        )
-        self.tracker.next_epoch()
-        pass
+        # self.log('misc/epoch', self.current_epoch, prefixed=False)
+        # self.log('misc/epoch_time', (self.epoch_stop_time - self.epoch_start_time).total_seconds())
+        metrics = self.tracker.reduce()
+        self.history.append_metrics(**metrics)
+        self.history.next_step()
 
     def _update_table(self):
-        self.table.update('Epoch', self.current_epoch)
-
         time = datetime.now() - self.epoch_start_time
         self.table.update('Took', str(time - timedelta(microseconds=time.microseconds)))
 
@@ -190,129 +168,9 @@ class Stage:
         eta = per_epoch * (self.max_epochs - self.current_epoch)
         self.table.update('ETA', str(eta - timedelta(microseconds=eta.microseconds)))
 
+        last_metrics = self.history.last()
         for name, metric in self.columns.items():
             if metric is not None:
-                self.table.update(name, self.tracker[metric][-1])
+                self.table.update(name, last_metrics[metric])
 
         self.table.next_row()
-
-
-class TrainValStage(Stage):
-    def __init__(self):
-        super().__init__()
-        self.is_train = True
-
-    def train_dataset(self):
-        train_ds = self.pipeline.datasets.get('train')
-        if train_ds is None:
-            raise ValueError(
-                'No "train" dataset found in pipeline. Use register_dataset("train", ...) to register a dataset.'
-            )
-        return train_ds
-
-    def val_dataset(self):
-        val_ds = self.pipeline.datasets.get('val')
-        if val_ds is None:
-            raise ValueError(
-                'No "val" dataset found in pipeline. Use register_dataset("val", ...) to register a dataset.'
-            )
-        return val_ds
-
-    def optimizers(self):
-        return self.pipeline.optimizers.values()
-
-    def loss_metric_name(self):
-        return 'loss'
-
-    def train_metric_prefix(self):
-        return 'train'
-
-    def val_metric_prefix(self):
-        return 'val'
-
-    def gradient_clip(self):
-        return 0.0
-
-    def run_epoch(self):
-        self.train_epoch()
-        self.val_epoch()
-
-    def step(self, batch) -> torch.Tensor:
-        raise NotImplementedError()
-
-    def train_step(self, batch):
-        return self.step(batch)
-
-    def val_step(self, batch):
-        return self.step(batch)
-
-    def zero_grad(self):
-        for optimizer in self.optimizers():
-            optimizer.zero_grad()
-
-    def clip_gradients(self):
-        for optimizer in self.optimizers():
-            for group in optimizer.param_groups:
-                torch.nn.utils.clip_grad_norm_(group['params'], self.gradient_clip())
-
-    def optimize(self, loss):
-        loss.backward()
-
-        if self.gradient_clip():
-            self.clip_gradients()
-
-        for optimizer in self.optimizers():
-            optimizer.step()
-
-    def train_epoch(self):
-        self.is_train = True
-        self.metric_prefix = self.train_metric_prefix()
-
-        train_ds = self.train_dataset()
-        if hasattr(train_ds, 'sampler') and hasattr(train_ds.sampler, 'set_epoch'):
-            train_ds.sampler.set_epoch(self.current_epoch)
-
-        for batch in train_ds:
-            step_start_time = time.perf_counter_ns()
-            self.zero_grad()
-            loss = self.train_step(batch)
-            self.optimize(loss)
-            step_end_time = time.perf_counter_ns()
-
-            self.track_reduce(self.loss_metric_name(), loss)
-            self.track_reduce('misc/total_train_batches', torch.tensor(1), reduction=Reduction.SUM, prefixed=False)
-            self.track_reduce(
-                'misc/worker_train_batches',
-                torch.tensor(1),
-                reduction=Reduction.SUM,
-                reduce_globally=False,
-                prefixed=False,
-            )
-            self.track_reduce('misc/step_time_ms', torch.tensor(step_end_time - step_start_time) / 1e6, prefixed=False)
-
-        for name, scheduler in self.pipeline.schedulers.items():
-            self.track(f'misc/lr_{name}', scheduler.get_last_lr()[0], prefixed=False)
-            scheduler.step()
-
-    @torch.no_grad()
-    def val_epoch(self):
-        self.is_train = False
-        self.metric_prefix = self.val_metric_prefix()
-
-        for batch in self.val_dataset():
-            loss = self.val_step(batch)
-            self.track_reduce(self.loss_metric_name(), loss)
-            self.track_reduce('misc/total_val_batches', torch.tensor(1), reduction=Reduction.SUM, prefixed=False)
-            self.track_reduce(
-                'misc/worker_val_batches',
-                torch.tensor(1),
-                reduction=Reduction.SUM,
-                reduce_globally=False,
-                prefixed=False,
-            )
-
-    def table_columns(self):
-        columns = super().table_columns()
-        columns.insert(1, {'name': '[Train] Loss', 'metric': f'{self.train_metric_prefix()}/{self.loss_metric_name()}'})
-        columns.insert(2, {'name': '[Val] Loss', 'metric': f'{self.val_metric_prefix()}/{self.loss_metric_name()}'})
-        return columns
