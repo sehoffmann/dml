@@ -14,16 +14,16 @@ from dmlcloud.util.wandb import wandb, wandb_is_initialized, wandb_set_startup_t
 from ..util.logging import experiment_header, general_diagnostics, IORedirector
 from . import logging as dml_logging
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
-from .distributed import all_gather_object, broadcast_object, init, is_root, local_rank, root_only
+from .distributed import all_gather_object, broadcast_object, init, local_rank, root_only
 from .stage import Stage
 
 
 __all__ = [
-    'TrainingPipeline',
+    'Pipeline',
 ]
 
 
-class TrainingPipeline:
+class Pipeline:
     def __init__(self, config: Optional[Union[OmegaConf, Dict]] = None, name: Optional[str] = None):
         if config is None:
             self.config = OmegaConf.create()
@@ -82,7 +82,7 @@ class TrainingPipeline:
         if not isinstance(stage, Stage):
             raise ValueError('stage must be a Stage object')
 
-        stage.pipeline = self
+        stage.pipe = self
         stage.max_epochs = max_epochs
         stage.name = name
         self.stages.append(stage)

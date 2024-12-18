@@ -11,9 +11,8 @@ Core
 .. autosummary::
     :toctree: generated
 
-    TrainingPipeline
+    Pipeline
     Stage
-    TrainValStage
 
 
 torch.distributed helpers
@@ -73,7 +72,5 @@ Metric Tracking
 .. autosummary::
     :toctree: generated
 
-    MetricReducer
-    MetricTracker
-    reduce_tensor
-    Reduction
+    TrainingHistory
+    Tracker

@@ -24,7 +24,7 @@ class Stage:
     """
 
     def __init__(self):
-        self.pipeline = None  # set by the pipeline
+        self.pipe = None  # set by the pipeline
         self.max_epochs = None  # set by the pipeline
         self.name = None  # set by the pipeline
 
@@ -44,11 +44,11 @@ class Stage:
 
     @property
     def device(self):
-        return self.pipeline.device
+        return self.pipe.device
 
     @property
     def config(self):
-        return self.pipeline.config
+        return self.pipe.config
 
     @property
     def current_epoch(self):
@@ -120,7 +120,7 @@ class Stage:
 
     def _pre_stage(self):
         self.start_time = datetime.now()
-        if len(self.pipeline.stages) > 1:
+        if len(self.pipe.stages) > 1:
             dml_logging.info(f'\n========== STAGE: {self.name} ==========')
 
         self.table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
@@ -132,14 +132,14 @@ class Stage:
 
         dml_logging.flush_logger()
 
-        self.pipeline.barrier(self.barrier_timeout)
+        self.pipe.barrier(self.barrier_timeout)
 
     def _post_stage(self):
         self.table.close()
         self.post_stage()
-        self.pipeline.barrier(self.barrier_timeout)
+        self.pipe.barrier(self.barrier_timeout)
         self.stop_time = datetime.now()
-        if len(self.pipeline.stages) > 1:
+        if len(self.pipe.stages) > 1:
             dml_logging.info(f'Finished stage in {self.stop_time - self.start_time}')
 
     def _pre_epoch(self):

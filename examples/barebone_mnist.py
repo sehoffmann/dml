@@ -71,7 +71,7 @@ class MNISTStage(dml.Stage):
         self.train_sampler.set_epoch(self.current_epoch)
 
         for img, target in self.train_loader:
-            img, target = img.to(self.pipeline.device), target.to(self.pipeline.device)
+            img, target = img.to(self.device), target.to(self.device)
 
             self.optimizer.zero_grad()
             output = self.model(img)
@@ -89,7 +89,7 @@ class MNISTStage(dml.Stage):
         self.metric_prefix = 'val'
 
         for img, target in self.val_loader:
-            img, target = img.to(self.pipeline.device), target.to(self.pipeline.device)
+            img, target = img.to(self.device), target.to(self.device)
 
             output = self.model(img)
             loss = self.loss(output, target)
@@ -100,9 +100,9 @@ class MNISTStage(dml.Stage):
 
 
 def main():
-    pipeline = dml.TrainingPipeline()
-    pipeline.append_stage(MNISTStage(), max_epochs=3)
-    pipeline.run()
+    pipe = dml.Pipeline()
+    pipe.append_stage(MNISTStage(), max_epochs=3)
+    pipe.run()
 
 
 if __name__ == '__main__':
