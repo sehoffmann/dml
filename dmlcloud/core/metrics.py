@@ -167,7 +167,6 @@ class Tracker(torch.nn.Module):
         super().__init__()
 
         self.metrics = torch.nn.ModuleDict()
-        self.external_metrics = torch.nn.ModuleDict()
 
     def add_metric(self, name: str, metric: torchmetrics.Metric):
         if name in self.metrics:

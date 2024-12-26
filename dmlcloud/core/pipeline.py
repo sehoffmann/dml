@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader, Dataset
 from dmlcloud.util.wandb import wandb, wandb_is_initialized, wandb_set_startup_timeout
 from ..util.logging import experiment_header, general_diagnostics, IORedirector
 from . import logging as dml_logging
+from .callbacks import CsvCallback
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
 from .distributed import all_gather_object, broadcast_object, init, local_rank, root_only
 from .stage import Stage
@@ -31,6 +32,10 @@ class Pipeline:
             self.config = OmegaConf.create(config)
         else:
             self.config = config
+
+        # Auto-init distributed if not already initialized
+        if not dist.is_initialized():
+            init()
 
         self.name = name
 
@@ -179,9 +184,6 @@ class Pipeline:
         if len(self.stages) == 0:
             raise ValueError('No stages defined. Use append_stage() to add stages to the pipeline.')
 
-        if not dist.is_initialized():
-            init()
-
         if dist.is_gloo_available():
             self.gloo_group = dist.new_group(backend='gloo')
         else:
@@ -225,6 +227,9 @@ class Pipeline:
             self.checkpoint_dir.save_config(self.config)
         self.io_redirector = IORedirector(self.checkpoint_dir.log_file)
         self.io_redirector.install()
+
+        for stage in self.stages:
+            stage.add_callback(CsvCallback(self.checkpoint_dir.path / f'metrics_{stage.name}.csv'))
 
     def _resume_run(self):
         dml_logging.info(f'Resuming training from checkpoint: {self.checkpoint_dir}')

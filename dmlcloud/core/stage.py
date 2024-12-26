@@ -1,7 +1,7 @@
 from typing import Any, Callable, List, Optional
 
 from . import logging as dml_logging
-from .callbacks import ReduceMetricsCallback, StageCallback, TableCallback, TimerCallback
+from .callbacks import CsvCallback, ReduceMetricsCallback, StageCallback, TableCallback, TimerCallback
 from .metrics import Tracker, TrainingHistory
 
 __all__ = [
@@ -146,7 +146,7 @@ class Stage:
 
     def post_epoch(self):
         """
-        Executed after each epoch and after the metrics have been reduced.
+        Executed after each epoch.
         """
         pass
 

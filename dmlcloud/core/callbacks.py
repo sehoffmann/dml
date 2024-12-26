@@ -1,6 +1,8 @@
+import csv
 import sys
 from datetime import datetime, timedelta
-from typing import Callable, Optional
+from pathlib import Path
+from typing import Callable, Optional, Union
 
 import torch
 from progress_table import ProgressTable
@@ -16,6 +18,7 @@ __all__ = [
     'TimreCallback',
     'TableCallback',
     'ReduceMetricsCallback',
+    'CsvCallback',
 ]
 
 
@@ -195,3 +198,32 @@ class ReduceMetricsCallback(StageCallback):
         metrics = stage.tracker.reduce()
         stage.history.append_metrics(**metrics)
         stage.history.next_step()
+
+
+class CsvCallback(StageCallback):
+    """
+    Saves metrics to a CSV file at the end of each epoch.
+    """
+
+    def __init__(self, path: Union[str, Path]):
+        self.path = Path(path)
+
+    def pre_stage(self, stage: 'Stage'):
+        # If for some reason we can't write to the file or it exists already, its better to fail early
+        with open(self.path, 'x'):
+            pass
+
+    def post_epoch(self, stage: 'Stage'):
+        with open(self.path, 'a') as f:
+            writer = csv.writer(f)
+
+            metrics = stage.history.last()
+
+            # Write the header if the file is empty
+            if f.tell() == 0:
+                writer.writerow(['Epoch'] + list(metrics))
+
+            row = [stage.current_epoch - 1]  # epoch is already incremented
+            for value in metrics.values():
+                row.append(value.item())
+            writer.writerow(row)
