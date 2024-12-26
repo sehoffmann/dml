@@ -267,11 +267,11 @@ def _init_process_group_dummy(**kwargs):
     Uses HashStore under the hood. Useful for applications that only run on a single GPU.
     """
     _WorkerInfo.INIT_METHOD = 'dummy'
-    _WorkerInfo.RANK = os.environ['RANK']
-    _WorkerInfo.WORLD_SIZE = os.environ['WORLD_SIZE']
-    _WorkerInfo.LOCAL_RANK = os.environ['LOCAL_RANK']
-    _WorkerInfo.LOCAL_WORLD_SIZE = os.environ['LOCAL_WORLD_SIZE']
-    _WorkerInfo.NODE_ID = os.environ['GROUP_RANK']
+    _WorkerInfo.RANK = 0
+    _WorkerInfo.WORLD_SIZE = 1
+    _WorkerInfo.LOCAL_RANK = 0
+    _WorkerInfo.LOCAL_WORLD_SIZE = 1
+    _WorkerInfo.NODE_ID = 0
 
     backend = kwargs.get('backend', None)
     if backend is None:
