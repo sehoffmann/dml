@@ -1,12 +1,7 @@
-import sys
-from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Callable, List, Optional
 
-from progress_table import ProgressTable
-
-from ..util.logging import DevNullIO
 from . import logging as dml_logging
-from .distributed import is_root
+from .callbacks import ReduceMetricsCallback, StageCallback, TableCallback, TimerCallback
 from .metrics import Tracker, TrainingHistory
 
 __all__ = [
@@ -27,21 +22,23 @@ class Stage:
         self.name = name or self.__class__.__name__
         self.max_epochs = epochs
 
+        self.callbacks: List[StageCallback] = []
+
         self.pipe = None  # set by the pipeline
 
         self.history = TrainingHistory()
         self.tracker = Tracker()
 
-        self.start_time = None
-        self.stop_time = None
-        self.epoch_start_time = None
-        self.epoch_stop_time = None
+        self._timer = TimerCallback()
+        self.add_callback(self._timer)
+
+        self.add_callback(ReduceMetricsCallback())
+
+        self._table_callback = TableCallback()
+        self.add_callback(self._table_callback)
 
         self.metric_prefix = None
         self.barrier_timeout = None
-
-        self.table = None
-        self.columns = {}
 
     @property
     def device(self):
@@ -54,6 +51,37 @@ class Stage:
     @property
     def current_epoch(self):
         return self.history.num_steps
+
+    @property
+    def start_time(self):
+        return self._timer.start_time
+
+    @property
+    def end_time(self):
+        return self._timer.end_time
+
+    @property
+    def epoch_start_time(self):
+        return self._timer.epoch_start_time
+
+    @property
+    def epoch_end_time(self):
+        return self._timer.epoch_end_time
+
+    @property
+    def table(self):
+        return self._table_callback.table
+
+    def add_callback(self, callback: StageCallback):
+        """
+        Adds a callback to this stage.
+
+        Callbacks are executed in the order they are added and after the stage-specific hooks.
+
+        Args:
+            callback (StageCallback): The callback to add.
+        """
+        self.callbacks.append(callback)
 
     def log(self, name: str, value: Any, reduction: str = 'mean', prefixed: bool = True):
         if prefixed:
@@ -69,12 +97,32 @@ class Stage:
         self,
         name: str,
         metric: Optional[str] = None,
+        formatter: Optional[Callable] = None,
         width: Optional[int] = None,
         color: Optional[str] = None,
         alignment: Optional[str] = None,
     ):
-        self.columns[name] = metric
-        self.table.add_column(name, width=width, color=color, alignment=alignment)
+        """
+        Adds a column to the table.
+
+        If metric is provided, the column will be updated with the latest value of the metric.
+        Otherwise,the caller must update the value manually using `table.update`.
+
+        If a formatter is provided, the metric value will be passed through the formatter before being displayed.
+
+        For a detailed description of width, color, and alignment, see `ProgressTable.add_column`.
+
+        Args:
+            name (str): The name of the column.
+            metric (str, optional): The name of the metric to track. Defaults to None.
+            formatter (Callable, optional): A function that takes the metric value and returns a string. Defaults to None.
+            width (int, optional): The width of the column. Defaults to None.
+            color (str, optional): The color of the column. Defaults to None.
+            alignment (str, optional): The alignment of the column. Defaults to None.
+        """
+        self._table_callback.track_metric(
+            name, metric=metric, formatter=formatter, width=width, color=color, alignment=alignment
+        )
 
     def pre_stage(self):
         """
@@ -120,58 +168,31 @@ class Stage:
         self._post_stage()
 
     def _pre_stage(self):
-        self.start_time = datetime.now()
         if len(self.pipe.stages) > 1:
             dml_logging.info(f'\n========== STAGE: {self.name} ==========')
 
-        self.table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
-        self.add_column('Epoch', None, color='bright', width=5)
-        self.add_column('Took', None, width=7)
-        self.add_column('ETA', None, width=7)
-
         self.pre_stage()
+
+        for callback in self.callbacks:
+            callback.pre_stage(self)
 
         dml_logging.flush_logger()
 
         self.pipe.barrier(self.barrier_timeout)
 
     def _post_stage(self):
-        self.table.close()
         self.post_stage()
+        for callback in self.callbacks:
+            callback.post_stage(self)
+
         self.pipe.barrier(self.barrier_timeout)
-        self.stop_time = datetime.now()
-        if len(self.pipe.stages) > 1:
-            dml_logging.info(f'Finished stage in {self.stop_time - self.start_time}')
 
     def _pre_epoch(self):
-        self.epoch_start_time = datetime.now()
-        self.table['Epoch'] = self.current_epoch
         self.pre_epoch()
+        for callback in self.callbacks:
+            callback.pre_epoch(self)
 
     def _post_epoch(self):
-        self.epoch_stop_time = datetime.now()
-        self._reduce_metrics()
         self.post_epoch()
-        self._update_table()
-
-    def _reduce_metrics(self):
-        # self.log('misc/epoch', self.current_epoch, prefixed=False)
-        # self.log('misc/epoch_time', (self.epoch_stop_time - self.epoch_start_time).total_seconds())
-        metrics = self.tracker.reduce()
-        self.history.append_metrics(**metrics)
-        self.history.next_step()
-
-    def _update_table(self):
-        time = datetime.now() - self.epoch_start_time
-        self.table.update('Took', str(time - timedelta(microseconds=time.microseconds)))
-
-        per_epoch = (datetime.now() - self.start_time) / self.current_epoch
-        eta = per_epoch * (self.max_epochs - self.current_epoch)
-        self.table.update('ETA', str(eta - timedelta(microseconds=eta.microseconds)))
-
-        last_metrics = self.history.last()
-        for name, metric in self.columns.items():
-            if metric is not None:
-                self.table.update(name, last_metrics[metric])
-
-        self.table.next_row()
+        for callback in self.callbacks:
+            callback.post_epoch(self)

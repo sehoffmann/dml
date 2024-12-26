@@ -53,9 +53,9 @@ class MNISTStage(dml.Stage):
 
         # Finally, we add columns to the table to track the loss and accuracy
         self.add_column('[Train] Loss', 'train/loss', color='green')
-        self.add_column('[Train] Acc.', 'train/accuracy', color='green')
-        self.add_column('[Val] Loss', 'val/loss', color='blue')
-        self.add_column('[Val] Acc.', 'val/accuracy', color='blue')
+        self.add_column('[Train] Acc.', 'train/accuracy', formatter=lambda acc: f'{100*acc:.2f}%', color='green')
+        self.add_column('[Val] Loss', 'val/loss', color='cyan')
+        self.add_column('[Val] Acc.', 'val/accuracy', formatter=lambda acc: f'{100*acc:.2f}%', color='cyan')
 
         self.train_acc = self.add_metric('train/accuracy', torchmetrics.Accuracy('multiclass', num_classes=10))
         self.val_acc = self.add_metric('val/accuracy', torchmetrics.Accuracy('multiclass', num_classes=10))
