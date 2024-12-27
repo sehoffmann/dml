@@ -1,13 +1,11 @@
 """Contains helpers for distributed data processing and loading."""
 
-from .sharding import *
-from .xarray import *
-from .interleave import *
-from .dataset import *
-
 __all__ = []
 
 # Sharding
+
+from .sharding import chunk_and_shard_indices, shard_indices, shard_sequence
+
 __all__ += [
     'shard_indices',
     'shard_sequence',
@@ -15,6 +13,9 @@ __all__ += [
 ]
 
 # Dataset
+
+from .dataset import BatchDataset, DownstreamDataset, PrefetchDataset, ShardedSequenceDataset
+
 __all__ += [
     'ShardedSequenceDataset',
     'DownstreamDataset',
@@ -23,6 +24,9 @@ __all__ += [
 ]
 
 # Interleave
+
+from .interleave import interleave_batches, interleave_dict_batches
+
 __all__ += [
     'interleave_batches',
     'interleave_dict_batches',
@@ -30,6 +34,9 @@ __all__ += [
 
 
 # Xarray
+
+from .xarray import sharded_xr_dataset, ShardedXrDataset
+
 __all__ += [
     'sharded_xr_dataset',
     'ShardedXrDataset',

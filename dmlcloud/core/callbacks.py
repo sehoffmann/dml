@@ -2,7 +2,7 @@ import csv
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, TYPE_CHECKING, Union
 
 import torch
 from progress_table import ProgressTable
@@ -11,11 +11,14 @@ from ..util.logging import DevNullIO
 from . import logging as dml_logging
 from .distributed import is_root
 
+if TYPE_CHECKING:
+    from .stage import Stage
+
 
 __all__ = [
     'TimedeltaFormatter',
     'StageCallback',
-    'TimreCallback',
+    'TimerCallback',
     'TableCallback',
     'ReduceMetricsCallback',
     'CsvCallback',
@@ -94,11 +97,8 @@ class TimerCallback(StageCallback):
         stage.log('misc/epoch_time', (stage.epoch_end_time - self.epoch_start_time).total_seconds(), prefixed=False)
         stage.log('misc/total_time', (stage.epoch_end_time - self.start_time).total_seconds(), prefixed=False)
 
-        eta = (
-            (stage.epoch_end_time - self.start_time)
-            / (stage.current_epoch + 1)
-            * (stage.max_epochs - stage.current_epoch - 1)
-        )
+        average_epoch_time = (stage.epoch_end_time - self.start_time) / (stage.current_epoch + 1)
+        eta = average_epoch_time * (stage.max_epochs - stage.current_epoch - 1)
         stage.log('misc/eta', eta.total_seconds(), prefixed=False)
 
         if len(stage.pipe.stages) > 1:

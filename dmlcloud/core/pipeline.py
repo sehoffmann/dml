@@ -1,13 +1,11 @@
-import logging
 import warnings
 from datetime import datetime, timedelta
 from functools import cached_property
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 import torch
 import torch.distributed as dist
 from omegaconf import OmegaConf
-from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, Dataset
 
 from dmlcloud.util.wandb import wandb, wandb_is_initialized, wandb_set_startup_timeout

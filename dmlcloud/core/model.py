@@ -57,7 +57,7 @@ def wrap_ddp(
         module, broadcast_buffers=False, device_ids=device_ids, find_unused_parameters=find_unused_parameters
     )
     if verbose:
-        msg = f'* MODEL:\n'
+        msg = '* MODEL:\n'
         msg += f'    - Parameters: {count_parameters(module) / 1e6:.1f} kk\n'
         msg += f'    - {module}'
         dml_logging.info(msg)

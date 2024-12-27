@@ -1,8 +1,11 @@
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, TYPE_CHECKING
 
 from . import logging as dml_logging
-from .callbacks import CsvCallback, ReduceMetricsCallback, StageCallback, TableCallback, TimerCallback
+from .callbacks import ReduceMetricsCallback, TableCallback, TimerCallback
 from .metrics import Tracker, TrainingHistory
+
+if TYPE_CHECKING:
+    from .callbacks import StageCallback
 
 __all__ = [
     'Stage',
@@ -22,7 +25,7 @@ class Stage:
         self.name = name or self.__class__.__name__
         self.max_epochs = epochs
 
-        self.callbacks: List[StageCallback] = []
+        self.callbacks: list[StageCallback] = []
 
         self.pipe = None  # set by the pipeline
 
@@ -72,7 +75,7 @@ class Stage:
     def table(self):
         return self._table_callback.table
 
-    def add_callback(self, callback: StageCallback):
+    def add_callback(self, callback: 'StageCallback'):
         """
         Adds a callback to this stage.
 
@@ -96,11 +99,11 @@ class Stage:
     def add_column(
         self,
         name: str,
-        metric: Optional[str] = None,
-        formatter: Optional[Callable] = None,
-        width: Optional[int] = None,
-        color: Optional[str] = None,
-        alignment: Optional[str] = None,
+        metric: str | None = None,
+        formatter: Callable | None = None,
+        width: int | None = None,
+        color: str | None = None,
+        alignment: str | None = None,
     ):
         """
         Adds a column to the table.

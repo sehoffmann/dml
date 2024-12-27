@@ -1,5 +1,4 @@
 from collections import namedtuple
-from enum import Enum
 from typing import Any, Union
 
 import numpy as np
@@ -105,12 +104,12 @@ class TrainingHistory:
                 raise ValueError(f'Metric {name} does not have a value for step {self.num_steps}')
 
         for name, value in self._current_values.items():
-            if type(value) == ArrayLike:
+            if type(value) == ArrayLike:  # noqa
                 value = np.as_array(value)
 
             if name not in self._metrics:
                 self._metrics[name] = [value]
-                self._dtypes[name] = value.dtype if type(value) == ArrayLike else object
+                self._dtypes[name] = value.dtype if type(value) == ArrayLike else object  # noqa
             else:
                 self._metrics[name].append(value)
 
