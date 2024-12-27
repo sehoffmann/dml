@@ -1,9 +1,10 @@
 import pytest
-from dmlcloud.core.distributed import deinitialize_torch_distributed, init_process_group_dummy
+import torch
+from dmlcloud.core.distributed import init
 
 
 @pytest.fixture
 def torch_distributed():
-    init_process_group_dummy()
+    init(kind='dummy')
     yield
-    deinitialize_torch_distributed()
+    torch.distributed.destroy_process_group()

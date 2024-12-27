@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import torch
 import xarray as xr
-from dmlcloud.util.data import interleave_batches, shard_indices, sharded_xr_dataset, ShardedXrDataset
+from dmlcloud.data import interleave_batches, shard_indices, sharded_xr_dataset, ShardedXrDataset
 from numpy.testing import assert_array_equal
 from torch.utils.data import DataLoader, IterableDataset
 

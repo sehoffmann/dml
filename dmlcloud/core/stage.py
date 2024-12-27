@@ -84,7 +84,7 @@ class Stage:
         self.callbacks.append(callback)
 
     def log(self, name: str, value: Any, reduction: str = 'mean', prefixed: bool = True):
-        if prefixed:
+        if prefixed and self.metric_prefix:
             name = f'{self.metric_prefix}/{name}'
         self.tracker.log(name, value, reduction)
 
