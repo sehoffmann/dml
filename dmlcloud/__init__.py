@@ -42,10 +42,10 @@ __all__ += [
 
 # Callbacks
 
-from .core.callbacks import StageCallback
+from .core.callbacks import Callback
 
 __all__ += [
-    'StageCallback',
+    'Callback',
 ]
 
 # Distributed helpers

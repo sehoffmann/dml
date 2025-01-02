@@ -13,11 +13,12 @@ from .distributed import is_root
 
 if TYPE_CHECKING:
     from .stage import Stage
+    from .pipeline import Pipeline
 
 
 __all__ = [
     'TimedeltaFormatter',
-    'StageCallback',
+    'Callback',
     'TimerCallback',
     'TableCallback',
     'ReduceMetricsCallback',
@@ -40,10 +41,35 @@ class TimedeltaFormatter:
         return str(delta)
 
 
-class StageCallback:
+class Callback:
     """
-    A callback that can be registered to a stage to receive updates on the training progress.
+    A callback that can be registered to a stage or the whole pipeline to receive updates on the training progress.
     """
+
+    def pre_run(self, pipe: 'Pipeline'):
+        """
+        Executed before the pipeline starts.
+        """
+        pass
+
+    def post_run(self, pipe: 'Pipeline'):
+        """
+        Executed after the pipeline finishes.
+        """
+        pass
+
+    def cleanup(self, pipe: 'Pipeline',  exc_type, exc_value, traceback):
+        """
+        Executed after the pipeline finishes, even if an error occurred. 
+        E.g. to close file handles.
+
+        Args:
+            pipe (Pipeline): The pipeline that is being cleaned up.
+            exc_type (type): The type of the exception that caused the cleanup or None if no exception occurred.
+            exc_value (Exception): The exception that caused the cleanup or None if no exception occurred.
+            traceback (Traceback): The traceback of the exception that caused the cleanup or None if no exception occurred.
+        """
+        pass
 
     def pre_stage(self, stage: 'Stage'):
         """
@@ -70,7 +96,7 @@ class StageCallback:
         pass
 
 
-class TimerCallback(StageCallback):
+class TimerCallback(Callback):
     """
     A callback that logs the time taken for each epoch.
     """
@@ -105,7 +131,7 @@ class TimerCallback(StageCallback):
             dml_logging.info(f'Finished stage in {stage.end_time - stage.start_time}')
 
 
-class TableCallback(StageCallback):
+class TableCallback(Callback):
     """
     A callback that updates a table with the latest metrics from a stage.
     """
@@ -189,7 +215,7 @@ class TableCallback(StageCallback):
         self.table.next_row()
 
 
-class ReduceMetricsCallback(StageCallback):
+class ReduceMetricsCallback(Callback):
     """
     A callback that reduces the metrics at the end of each epoch and appends them to the history.
     """
@@ -200,21 +226,47 @@ class ReduceMetricsCallback(StageCallback):
         stage.history.next_step()
 
 
-class CsvCallback(StageCallback):
+class CsvCallback(Callback):
     """
     Saves metrics to a CSV file at the end of each epoch.
     """
 
-    def __init__(self, path: Union[str, Path]):
+    def __init__(self, path: Union[str, Path], append_stage_name: bool = False):
+        """
+        Initialize the callback with the given path.
+
+        Args:
+            path (Union[str, Path]): The file path where the callback will operate.
+            append_stage_name (bool, optional): Whether to append the stage name to the path. Defaults to False.
+        """
         self.path = Path(path)
+        self.append_stage_name = append_stage_name
+
+    def csv_path(self, stage: 'Stage'):
+        """
+        Generate the CSV file path for the given stage.
+
+        If `append_stage_name` is True, the method appends the stage name to the file name.
+        Otherwise, it returns the base path.
+
+        Args:
+            stage (Stage): The stage object containing the name to be appended.
+
+        Returns:
+            Path: The complete path to the CSV file.
+        """
+        if self.append_stage_name:
+            return self.path / f'metrics_{stage.name}.csv'
+        else:
+            return self.path
 
     def pre_stage(self, stage: 'Stage'):
         # If for some reason we can't write to the file or it exists already, its better to fail early
-        with open(self.path, 'x'):
+        with open(self.csv_path(stage), 'x'):
             pass
 
     def post_epoch(self, stage: 'Stage'):
-        with open(self.path, 'a') as f:
+        with open(self.csv_path(stage), 'a') as f:
             writer = csv.writer(f)
 
             metrics = stage.history.last()
@@ -227,3 +279,24 @@ class CsvCallback(StageCallback):
             for value in metrics.values():
                 row.append(value.item())
             writer.writerow(row)
+
+
+class WandbCallback(Callback):
+    """
+    A callback that logs metrics to Weights & Biases.
+    """
+
+    def __init__(self):
+        try:
+            import wandb
+        except ImportError:
+            raise ImportError('wandb is required for the WandbCallback')
+
+        self.wandb = wandb
+
+    def pre_stage(self, stage: 'Stage'):
+        self.wandb.init(project='dmlcloud', config=stage.config)
+
+    def post_epoch(self, stage: 'Stage'):
+        metrics = stage.history.last()
+        self.wandb.log(metrics)

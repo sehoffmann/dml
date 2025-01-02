@@ -3,6 +3,7 @@
 /wandb
 /doc/_build
 /doc/generated/
+/checkpoints
 
 ############################  Auto Generated ############################
 

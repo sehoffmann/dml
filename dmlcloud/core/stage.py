@@ -5,7 +5,7 @@ from .callbacks import ReduceMetricsCallback, TableCallback, TimerCallback
 from .metrics import Tracker, TrainingHistory
 
 if TYPE_CHECKING:
-    from .callbacks import StageCallback
+    from .callbacks import Callback
 
 __all__ = [
     'Stage',
@@ -25,7 +25,7 @@ class Stage:
         self.name = name or self.__class__.__name__
         self.max_epochs = epochs
 
-        self.callbacks: list[StageCallback] = []
+        self.callbacks: list[Callback] = []
 
         self.pipe = None  # set by the pipeline
 
@@ -75,7 +75,7 @@ class Stage:
     def table(self):
         return self._table_callback.table
 
-    def add_callback(self, callback: 'StageCallback'):
+    def add_callback(self, callback: 'Callback'):
         """
         Adds a callback to this stage.
 

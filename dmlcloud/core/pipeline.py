@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Dataset
 from dmlcloud.util.wandb import wandb, wandb_is_initialized, wandb_set_startup_timeout
 from ..util.logging import experiment_header, general_diagnostics, IORedirector
 from . import logging as dml_logging
-from .callbacks import CsvCallback
+from .callbacks import CsvCallback, Callback
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
 from .distributed import all_gather_object, broadcast_object, init, local_rank, root_only
 from .stage import Stage
@@ -20,6 +20,47 @@ from .stage import Stage
 __all__ = [
     'Pipeline',
 ]
+
+class _ForwardCallback(Callback):
+    """
+    A callback class that forwards the callback methods to all callbacks in the pipeline.
+    """
+
+    def pre_stage(self, stage):
+        for callback in stage.pipe.callbacks:
+            callback.pre_stage(stage)
+    
+    def post_stage(self, stage):
+        for callback in stage.pipe.callbacks:
+            callback.post_stage(stage)
+
+    def pre_epoch(self, stage):
+        for callback in stage.pipe.callbacks:
+            callback.pre_epoch(stage)
+    
+    def post_epoch(self, stage):
+        for callback in stage.pipe.callbacks:
+            callback.post_epoch(stage)
+
+
+class _RunGuard:
+    """
+    Context manager that ensures that the pipeline is properly cleaned up in case of an exception or interruption.
+    """
+    def __init__(self, pipe):
+        self.pipe = pipe
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        callbacks = []
+        if self.pipe.current_stage is not None:
+            callbacks += self.pipe.current_stage.callbacks
+        callbacks += self.pipe.callbacks
+
+        for callback in callbacks:
+            callback.cleanup(self.pipe, exc_type, exc_value, traceback)
 
 
 class Pipeline:
@@ -49,37 +90,20 @@ class Pipeline:
         self._wandb_initalizer = None
 
         self.stages = []
-        self.datasets = {}
-        self.models = {}
-        self.optimizers = {}
-        self.schedulers = {}
+        self.callbacks = []
 
     @property
     def checkpointing_enabled(self):
         return self.checkpoint_dir is not None
 
-    def register_optimizer(self, name: str, optimizer, scheduler=None):
-        if name in self.optimizers:
-            raise ValueError(f'Optimizer with name {name} already exists')
-        self.optimizers[name] = optimizer
-        if scheduler is not None:
-            self.schedulers[name] = scheduler
+    def add_callback(self, callback: Callback):
+        """
+        Adds a callback to the pipeline.
 
-    def register_dataset(self, name: str, dataset: Union[DataLoader, Dataset, Sequence], verbose: bool = True):
-        if name in self.datasets:
-            raise ValueError(f'Dataset with name {name} already exists')
-
-        self.datasets[name] = dataset
-        if verbose:
-            msg = f'Dataset "{name}":\n'
-            try:
-                length = len(dataset)
-                msg += f'    - Batches (Total): ~{length * dist.get_world_size()}\n'
-                msg += f'    - Batches (/Worker): {length}\n'
-            except TypeError:  # __len__ not implemented
-                msg += '    - Batches (Total): N/A\n'
-                msg += '    - Batches (/Worker): N/A\n'
-            dml_logging.info(msg)
+        The callback will be invoked for each stage in the pipeline and are executed in the order they are added.
+        Callbacks added to individual stages will be executed before the pipeline callbacks.
+        """
+        self.callbacks.append(callback)
 
     def append(self, stage: Stage):
         if not isinstance(stage, Stage):
@@ -152,6 +176,7 @@ class Pipeline:
         with _RunGuard(self):
             self._pre_run()
             for stage in self.stages:
+                self.current_stage = stage
                 stage.run()
             self._post_run()
 
@@ -180,12 +205,15 @@ class Pipeline:
 
     def _pre_run(self):
         if len(self.stages) == 0:
-            raise ValueError('No stages defined. Use append_stage() to add stages to the pipeline.')
+            raise ValueError('No stages defined. Use append() to add stages to the pipeline.')
 
         if dist.is_gloo_available():
             self.gloo_group = dist.new_group(backend='gloo')
         else:
             warnings.warn('Gloo backend not available. Barriers will not use custom timeouts.')
+
+        for stage in self.stages:
+            stage.add_callback(_ForwardCallback())  # forward callbacks to pipeline callbacks
 
         self.barrier(
             timeout=10 * 60
@@ -226,8 +254,7 @@ class Pipeline:
         self.io_redirector = IORedirector(self.checkpoint_dir.log_file)
         self.io_redirector.install()
 
-        for stage in self.stages:
-            stage.add_callback(CsvCallback(self.checkpoint_dir.path / f'metrics_{stage.name}.csv'))
+        self.add_callback(CsvCallback(self.checkpoint_dir.path, append_stage_name=True))
 
     def _resume_run(self):
         dml_logging.info(f'Resuming training from checkpoint: {self.checkpoint_dir}')
@@ -258,14 +285,3 @@ class Pipeline:
             self.io_redirector.uninstall()
 
         return False
-
-
-class _RunGuard:
-    def __init__(self, pipeline):
-        self.pipeline = pipeline
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        return self.pipeline._cleanup(exc_type, exc_value, traceback)
