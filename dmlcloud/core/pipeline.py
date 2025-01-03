@@ -68,7 +68,7 @@ class _RunGuard:
             callbacks += self.pipe.current_stage.callbacks
         callbacks += self.pipe.callbacks
 
-        for callback in callbacks:
+        for callback in reversed(callbacks):
             callback.cleanup(self.pipe, exc_type, exc_value, traceback)
 
         return suppress_exception
@@ -104,8 +104,6 @@ class Pipeline:
         self.name = name
 
         self.checkpoint_dir = None
-        self.gloo_group = None
-        self.io_redirector = None
         self.resumed = None
         self.start_time = None
         self.stop_time = None
@@ -115,6 +113,11 @@ class Pipeline:
 
         self.stages = []
         self.callbacks = []
+
+        if dist.is_gloo_available():
+            self.gloo_group = dist.new_group(backend='gloo')
+        else:
+            warnings.warn('Gloo backend not available. Barriers will not use custom timeouts.')
 
     @property
     def checkpointing_enabled(self):
@@ -197,15 +200,14 @@ class Pipeline:
         if len(self.stages) == 0:
             raise ValueError('No stages defined. Use append() to add stages to the pipeline.')
 
-        if dist.is_gloo_available():
-            self.gloo_group = dist.new_group(backend='gloo')
-        else:
-            warnings.warn('Gloo backend not available. Barriers will not use custom timeouts.')
-
         for stage in self.stages:
             stage.add_callback(_ForwardCallback())  # forward callbacks to pipeline callbacks
 
         self.add_callback(DiagnosticsCallback())
+
+        # make sure everything is set up before starting the run
+        # important to prevent checkpoint dir creation before all processes searched for it
+        self.barrier(timeout=10 * 60)
 
         with _RunGuard(self):
             self._pre_run()
@@ -238,10 +240,6 @@ class Pipeline:
             return torch.device('cpu')
 
     def _pre_run(self):
-        # make sure everything is set up before starting the run
-        # important to prevent checkpoint dir creation before all processes searched for it
-        self.barrier(timeout=10 * 60)
-
         self.start_time = datetime.now()
 
         header = '\n' + experiment_header(self.name, self.checkpoint_dir, self.start_time)
