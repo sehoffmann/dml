@@ -36,37 +36,41 @@ __all__ = [
     'print_root',
 ]
 
+def _distributed_filter(record):
+    if not torch.distributed.is_initialized():
+        return True   
+    elif torch.distributed.get_rank() == 0:
+        return True
+    else:
+        return False
+
 
 def setup_logger():
     """
     Setup the dmlcloud logger.
 
-    For this, torch.distributed must be initialized, as the logger will be setup to only log on the root process.
-    Non-root processes will only log messages with severity 'WARNING' or higher.
+    If torch.distributed is initialized, only the root-rank will log messages. Otherwise, all processes will log messages.
+    Non-root processes will always log messages with severity 'WARNING' or higher to ensure important messages are not missed.
 
     Usually, this function is called automatically when logging a message, and should not be called manually.
     """
     if logger.hasHandlers():
         warnings.warn('Logger already setup. Ignoring call to setup_logger().')
         return
-
-    if not torch.distributed.is_initialized():
-        warnings.warn(
-            'Cannot setup logger without torch.distributed being initialized. Ignoring call to setup_logger(). Messages will be logged by all ranks!'
-        )
-        return
-
-    logger.setLevel(logging.INFO if torch.distributed.get_rank() == 0 else logging.WARNING)
+    
+    logger.setLevel(logging.DEBUG)
 
     stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(logging.DEBUG)
+    stdout_handler.addFilter(_distributed_filter)
     stdout_handler.addFilter(lambda record: record.levelno < logging.WARNING)
     stdout_handler.setFormatter(logging.Formatter())
+    stdout_handler.setLevel(logging.DEBUG)
     logger.addHandler(stdout_handler)
 
     stderr_handler = logging.StreamHandler()
-    stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.addFilter(_distributed_filter)
     stderr_handler.setFormatter(logging.Formatter())
+    stderr_handler.setLevel(logging.WARNING)
     logger.addHandler(stderr_handler)
 
 
@@ -198,18 +202,21 @@ def print_root(*values, sep=' ', end="\n", file=None, flush=True):
 if __name__ == '__main__':
     from .distributed import init
 
+    info("HELOOO")
+
     init()
 
-    debug('This is a debug message')
-    info('This is an info message')
-    warning('This is a warning message')
-    error('This is an error message')
-    critical('This is a critical message')
+    debug('[A] This is a debug message')
+    info('[A] This is an info message')
+    warning('[A] This is a warning message')
+    error('[A] This is an error message')
+    critical('[A] This is a critical message')
+    
     reset_logger()
     torch.distributed.destroy_process_group()
 
-    debug('This is a debug message')
-    info('This is an info message')
-    warning('This is a warning message')
-    error('This is an error message')
-    critical('This is a critical message')
+    debug('[B] This is a debug message')
+    info('[B] This is an info message')
+    warning('[B] This is a warning message')
+    error('[B] This is an error message')
+    critical('[B] This is a critical message')
