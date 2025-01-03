@@ -7,11 +7,11 @@ import torch
 import torch.distributed as dist
 from omegaconf import OmegaConf
 
-from ..util.logging import experiment_header, general_diagnostics
+from ..util.logging import experiment_header
 from . import logging as dml_logging
-from .callbacks import Callback, CheckpointCallback, CsvCallback, WandbCallback
+from .callbacks import Callback, CheckpointCallback, CsvCallback, DiagnosticsCallback, WandbCallback
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
-from .distributed import all_gather_object, broadcast_object, init, is_root, local_rank
+from .distributed import broadcast_object, init, is_root, local_rank
 from .stage import Stage
 
 
@@ -112,7 +112,6 @@ class Pipeline:
         self.current_stage = None
 
         self.wandb = False
-        self._wandb_initalizer = None
 
         self.stages = []
         self.callbacks = []
@@ -195,6 +194,19 @@ class Pipeline:
         """
         Starts the training and runs all registered stages.
         """
+        if len(self.stages) == 0:
+            raise ValueError('No stages defined. Use append() to add stages to the pipeline.')
+
+        if dist.is_gloo_available():
+            self.gloo_group = dist.new_group(backend='gloo')
+        else:
+            warnings.warn('Gloo backend not available. Barriers will not use custom timeouts.')
+
+        for stage in self.stages:
+            stage.add_callback(_ForwardCallback())  # forward callbacks to pipeline callbacks
+
+        self.add_callback(DiagnosticsCallback())
+
         with _RunGuard(self):
             self._pre_run()
             for stage in self.stages:
@@ -226,17 +238,6 @@ class Pipeline:
             return torch.device('cpu')
 
     def _pre_run(self):
-        if len(self.stages) == 0:
-            raise ValueError('No stages defined. Use append() to add stages to the pipeline.')
-
-        if dist.is_gloo_available():
-            self.gloo_group = dist.new_group(backend='gloo')
-        else:
-            warnings.warn('Gloo backend not available. Barriers will not use custom timeouts.')
-
-        for stage in self.stages:
-            stage.add_callback(_ForwardCallback())  # forward callbacks to pipeline callbacks
-
         # make sure everything is set up before starting the run
         # important to prevent checkpoint dir creation before all processes searched for it
         self.barrier(timeout=10 * 60)
@@ -249,17 +250,6 @@ class Pipeline:
         if self.resumed:
             self._resume_run()
 
-        diagnostics = general_diagnostics()
-
-        diagnostics += '\n* DEVICES:\n'
-        devices = all_gather_object(str(self.device))
-        diagnostics += '\n'.join(f'    - [Rank {i}] {device}' for i, device in enumerate(devices))
-
-        diagnostics += '\n* CONFIG:\n'
-        diagnostics += '\n'.join(f'    {line}' for line in OmegaConf.to_yaml(self.config, resolve=True).splitlines())
-
-        dml_logging.info(diagnostics)
-
         self.pre_run()
 
         for callback in self.callbacks:
@@ -271,9 +261,6 @@ class Pipeline:
 
     def _post_run(self):
         self.stop_time = datetime.now()
-        dml_logging.info(f'Finished training in {self.stop_time - self.start_time} ({self.stop_time})')
-        if self.checkpointing_enabled:
-            dml_logging.info(f'Outputs have been saved to {self.checkpoint_dir}')
 
         self.post_run()
 

@@ -36,9 +36,10 @@ __all__ = [
     'print_root',
 ]
 
+
 def _distributed_filter(record):
     if not torch.distributed.is_initialized():
-        return True   
+        return True
     elif torch.distributed.get_rank() == 0:
         return True
     else:
@@ -57,7 +58,7 @@ def setup_logger():
     if logger.hasHandlers():
         warnings.warn('Logger already setup. Ignoring call to setup_logger().')
         return
-    
+
     logger.setLevel(logging.DEBUG)
 
     stdout_handler = logging.StreamHandler(sys.stdout)
@@ -211,7 +212,7 @@ if __name__ == '__main__':
     warning('[A] This is a warning message')
     error('[A] This is an error message')
     critical('[A] This is a critical message')
-    
+
     reset_logger()
     torch.distributed.destroy_process_group()
 

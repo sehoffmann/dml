@@ -8,10 +8,10 @@ import torch
 from omegaconf import OmegaConf
 from progress_table import ProgressTable
 
-from ..util.logging import DevNullIO, IORedirector
+from ..util.logging import DevNullIO, general_diagnostics, IORedirector
 from ..util.wandb import wandb_is_initialized, wandb_set_startup_timeout
 from . import logging as dml_logging
-from .distributed import is_root
+from .distributed import all_gather_object, is_root
 
 if TYPE_CHECKING:
     from .pipeline import Pipeline
@@ -353,3 +353,26 @@ class WandbCallback(Callback):
     def cleanup(self, pipe, exc_type, exc_value, traceback):
         if wandb_is_initialized():
             self.wandb.finish(exit_code=0 if exc_type is None else 1)
+
+
+class DiagnosticsCallback(Callback):
+    """
+    A callback that logs diagnostics information at the beginning of training.
+    """
+
+    def pre_run(self, pipe):
+        diagnostics = general_diagnostics()
+
+        diagnostics += '\n* DEVICES:\n'
+        devices = all_gather_object(str(pipe.device))
+        diagnostics += '\n'.join(f'    - [Rank {i}] {device}' for i, device in enumerate(devices))
+
+        diagnostics += '\n* CONFIG:\n'
+        diagnostics += '\n'.join(f'    {line}' for line in OmegaConf.to_yaml(pipe.config, resolve=True).splitlines())
+
+        dml_logging.info(diagnostics)
+
+    def post_run(self, pipe):
+        dml_logging.info(f'Finished training in {pipe.stop_time - pipe.start_time} ({pipe.stop_time})')
+        if pipe.checkpointing_enabled:
+            dml_logging.info(f'Outputs have been saved to {pipe.checkpoint_dir}')
