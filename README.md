@@ -26,7 +26,7 @@ pip install git+https://github.com/sehoffmann/dmlcloud.git
 ```
 
 ## Minimal Example
-See [examples/barebone_mnist.py](https://github.com/sehoffmann/dmlcloud/blob/develop/examples/barebone_mnist.py) for a minimal and barebone example on how to distributely train MNIST.
+See [examples/mnist.py](https://github.com/sehoffmann/dmlcloud/blob/develop/examples/mnist.py) for a minimal and barebone example on how to distributely train MNIST.
 To run it on a single node with 4 GPUs, use
 ```
 dmlrun -n 4 python examples/barebone_mnist.py

@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import Callable, Optional, TYPE_CHECKING, Union
 
 import torch
+from omegaconf import OmegaConf
 from progress_table import ProgressTable
 
 from ..util.logging import DevNullIO, IORedirector
+from ..util.wandb import wandb_is_initialized, wandb_set_startup_timeout
 from . import logging as dml_logging
 from .distributed import is_root
 
@@ -318,17 +320,36 @@ class WandbCallback(Callback):
     A callback that logs metrics to Weights & Biases.
     """
 
-    def __init__(self):
+    def __init__(self, entity, project, group, tags, startup_timeout, **kwargs):
         try:
             import wandb
         except ImportError:
             raise ImportError('wandb is required for the WandbCallback')
 
         self.wandb = wandb
+        self.entity = entity
+        self.project = project
+        self.group = group
+        self.tags = tags
+        self.startup_timeout = startup_timeout
+        self.kwargs = kwargs
 
-    def pre_stage(self, stage: 'Stage'):
-        self.wandb.init(project='dmlcloud', config=stage.config)
+    def pre_run(self, pipe: 'Pipeline'):
+        wandb_set_startup_timeout(self.startup_timeout)
+        self.wandb.init(
+            config=OmegaConf.to_container(pipe.config, resolve=True),
+            name=pipe.name,
+            entity=self.entity,
+            project=self.project,
+            group=self.group,
+            tags=self.tags,
+            **self.kwargs,
+        )
 
     def post_epoch(self, stage: 'Stage'):
         metrics = stage.history.last()
         self.wandb.log(metrics)
+
+    def cleanup(self, pipe, exc_type, exc_value, traceback):
+        if wandb_is_initialized():
+            self.wandb.finish(exit_code=0 if exc_type is None else 1)

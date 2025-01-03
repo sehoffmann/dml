@@ -7,12 +7,11 @@ import torch
 import torch.distributed as dist
 from omegaconf import OmegaConf
 
-from dmlcloud.util.wandb import wandb, wandb_is_initialized, wandb_set_startup_timeout
 from ..util.logging import experiment_header, general_diagnostics
 from . import logging as dml_logging
-from .callbacks import Callback, CheckpointCallback, CsvCallback
+from .callbacks import Callback, CheckpointCallback, CsvCallback, WandbCallback
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
-from .distributed import all_gather_object, broadcast_object, init, is_root, local_rank, root_only
+from .distributed import all_gather_object, broadcast_object, init, is_root, local_rank
 from .stage import Stage
 
 
@@ -76,17 +75,31 @@ class _RunGuard:
 
 
 class Pipeline:
+    """
+    A training pipeline that consists of multiple stages.
+
+    This is the main entry point for training with dmlcloud. The pipeline manages the training process and
+    orchestrates the execution of multiple stages. It also provides a way to add callbacks that are executed at
+    different points during the training process.
+
+    Use the `append()` method to add stages to the pipeline and `add_callback()` to add callbacks.
+
+    Checkpointing can be enabled with `enable_checkpointing()` and Weights & Biases integration with `enable_wandb()`.
+
+    Once the pipeline is set up, call `run()` to start the training process.
+    """
+
     def __init__(self, config: Optional[Union[OmegaConf, Dict]] = None, name: Optional[str] = None):
+        # Auto-init torch.distributed if not already initialized
+        if not dist.is_initialized():
+            init()
+
         if config is None:
             self.config = OmegaConf.create()
         elif not isinstance(config, OmegaConf):
             self.config = OmegaConf.create(config)
         else:
             self.config = config
-
-        # Auto-init distributed if not already initialized
-        if not dist.is_initialized():
-            init()
 
         self.name = name
 
@@ -160,22 +173,15 @@ class Pipeline:
         startup_timeout: int = 360,
         **kwargs,
     ):
-        import wandb  # import now to avoid potential long import times later on
+        if self.wandb:
+            raise ValueError('Wandb already enabled')
 
-        @root_only
-        def initializer():
-            wandb_set_startup_timeout(startup_timeout)
-            wandb.init(
-                config=OmegaConf.to_container(self.config, resolve=True),
-                name=self.name,
-                entity=entity,
-                project=project if project else self.name,
-                group=group,
-                tags=tags,
-                **kwargs,
-            )
+        import wandb  # import now to avoid potential long import times later on  # noqa
 
-        self._wandb_initalizer = initializer
+        if is_root():
+            project = project or self.name
+            self.add_callback(WandbCallback(project, entity, group, tags, startup_timeout, **kwargs))
+
         self.wandb = True
 
     def barrier(self, timeout=None):
@@ -231,14 +237,10 @@ class Pipeline:
         for stage in self.stages:
             stage.add_callback(_ForwardCallback())  # forward callbacks to pipeline callbacks
 
-        self.barrier(
-            timeout=10 * 60
-        )  # important to prevent checkpoint dir creation before all processes searched for it
+        # make sure everything is set up before starting the run
+        # important to prevent checkpoint dir creation before all processes searched for it
+        self.barrier(timeout=10 * 60)
 
-        if self.wandb:
-            self._wandb_initalizer()
-
-        self.barrier(timeout=10 * 60)  # make sure everything is set up before starting the run
         self.start_time = datetime.now()
 
         header = '\n' + experiment_header(self.name, self.checkpoint_dir, self.start_time)
@@ -272,16 +274,8 @@ class Pipeline:
         dml_logging.info(f'Finished training in {self.stop_time - self.start_time} ({self.stop_time})')
         if self.checkpointing_enabled:
             dml_logging.info(f'Outputs have been saved to {self.checkpoint_dir}')
+
         self.post_run()
 
         for callback in self.callbacks:
             callback.post_run(self)
-
-    def _cleanup(self, exc_type, exc_value, traceback):
-        """
-        Called by _RunGuard to ensure that the pipeline is properly cleaned up
-        """
-        if self.wandb and wandb_is_initialized():
-            wandb.finish(exit_code=0 if exc_type is None else 1)
-
-        return False
