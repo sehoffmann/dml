@@ -1,25 +1,25 @@
 import warnings
 from datetime import datetime, timedelta
 from functools import cached_property
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Union
 
 import torch
 import torch.distributed as dist
 from omegaconf import OmegaConf
-from torch.utils.data import DataLoader, Dataset
 
 from dmlcloud.util.wandb import wandb, wandb_is_initialized, wandb_set_startup_timeout
-from ..util.logging import experiment_header, general_diagnostics, IORedirector
+from ..util.logging import experiment_header, general_diagnostics
 from . import logging as dml_logging
-from .callbacks import CsvCallback, Callback
+from .callbacks import Callback, CheckpointCallback, CsvCallback
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
-from .distributed import all_gather_object, broadcast_object, init, local_rank, root_only
+from .distributed import all_gather_object, broadcast_object, init, is_root, local_rank, root_only
 from .stage import Stage
 
 
 __all__ = [
     'Pipeline',
 ]
+
 
 class _ForwardCallback(Callback):
     """
@@ -29,7 +29,7 @@ class _ForwardCallback(Callback):
     def pre_stage(self, stage):
         for callback in stage.pipe.callbacks:
             callback.pre_stage(stage)
-    
+
     def post_stage(self, stage):
         for callback in stage.pipe.callbacks:
             callback.post_stage(stage)
@@ -37,7 +37,7 @@ class _ForwardCallback(Callback):
     def pre_epoch(self, stage):
         for callback in stage.pipe.callbacks:
             callback.pre_epoch(stage)
-    
+
     def post_epoch(self, stage):
         for callback in stage.pipe.callbacks:
             callback.post_epoch(stage)
@@ -47,6 +47,7 @@ class _RunGuard:
     """
     Context manager that ensures that the pipeline is properly cleaned up in case of an exception or interruption.
     """
+
     def __init__(self, pipe):
         self.pipe = pipe
 
@@ -54,6 +55,15 @@ class _RunGuard:
         pass
 
     def __exit__(self, exc_type, exc_value, traceback):
+        suppress_exception = False
+        if exc_type is KeyboardInterrupt:
+            dml_logging.info('------- Training interrupted by user -------')
+            suppress_exception = True
+        elif exc_type is not None:
+            dml_logging.error(
+                '------- Training failed with an exception -------', exc_info=(exc_type, exc_value, traceback)
+            )
+
         callbacks = []
         if self.pipe.current_stage is not None:
             callbacks += self.pipe.current_stage.callbacks
@@ -61,6 +71,8 @@ class _RunGuard:
 
         for callback in callbacks:
             callback.cleanup(self.pipe, exc_type, exc_value, traceback)
+
+        return suppress_exception
 
 
 class Pipeline:
@@ -134,6 +146,10 @@ class Pipeline:
             self.resumed = False
 
         self.checkpoint_dir = CheckpointDir(path)
+
+        if is_root():
+            self.add_callback(CheckpointCallback(self.checkpoint_dir.path))
+            self.add_callback(CsvCallback(self.checkpoint_dir.path, append_stage_name=True))
 
     def enable_wandb(
         self,
@@ -218,8 +234,6 @@ class Pipeline:
         self.barrier(
             timeout=10 * 60
         )  # important to prevent checkpoint dir creation before all processes searched for it
-        if self.checkpointing_enabled:
-            self._init_checkpointing()
 
         if self.wandb:
             self._wandb_initalizer()
@@ -246,15 +260,8 @@ class Pipeline:
 
         self.pre_run()
 
-    @root_only
-    def _init_checkpointing(self):
-        if not self.checkpoint_dir.is_valid:
-            self.checkpoint_dir.create()
-            self.checkpoint_dir.save_config(self.config)
-        self.io_redirector = IORedirector(self.checkpoint_dir.log_file)
-        self.io_redirector.install()
-
-        self.add_callback(CsvCallback(self.checkpoint_dir.path, append_stage_name=True))
+        for callback in self.callbacks:
+            callback.pre_run(self)
 
     def _resume_run(self):
         dml_logging.info(f'Resuming training from checkpoint: {self.checkpoint_dir}')
@@ -267,21 +274,14 @@ class Pipeline:
             dml_logging.info(f'Outputs have been saved to {self.checkpoint_dir}')
         self.post_run()
 
+        for callback in self.callbacks:
+            callback.post_run(self)
+
     def _cleanup(self, exc_type, exc_value, traceback):
         """
         Called by _RunGuard to ensure that the pipeline is properly cleaned up
         """
-        if exc_type is KeyboardInterrupt:
-            dml_logging.info('------- Training interrupted by user -------')
-        elif exc_type is not None:
-            dml_logging.error(
-                '------- Training failed with an exception -------', exc_info=(exc_type, exc_value, traceback)
-            )
-
         if self.wandb and wandb_is_initialized():
             wandb.finish(exit_code=0 if exc_type is None else 1)
-
-        if self.io_redirector is not None:
-            self.io_redirector.uninstall()
 
         return False

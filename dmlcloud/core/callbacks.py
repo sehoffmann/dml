@@ -7,13 +7,13 @@ from typing import Callable, Optional, TYPE_CHECKING, Union
 import torch
 from progress_table import ProgressTable
 
-from ..util.logging import DevNullIO
+from ..util.logging import DevNullIO, IORedirector
 from . import logging as dml_logging
 from .distributed import is_root
 
 if TYPE_CHECKING:
-    from .stage import Stage
     from .pipeline import Pipeline
+    from .stage import Stage
 
 
 __all__ = [
@@ -22,7 +22,9 @@ __all__ = [
     'TimerCallback',
     'TableCallback',
     'ReduceMetricsCallback',
+    'CheckpointCallback',
     'CsvCallback',
+    'WandbCallback',
 ]
 
 
@@ -58,9 +60,9 @@ class Callback:
         """
         pass
 
-    def cleanup(self, pipe: 'Pipeline',  exc_type, exc_value, traceback):
+    def cleanup(self, pipe: 'Pipeline', exc_type, exc_value, traceback):
         """
-        Executed after the pipeline finishes, even if an error occurred. 
+        Executed after the pipeline finishes, even if an error occurred.
         E.g. to close file handles.
 
         Args:
@@ -224,6 +226,36 @@ class ReduceMetricsCallback(Callback):
         metrics = stage.tracker.reduce()
         stage.history.append_metrics(**metrics)
         stage.history.next_step()
+
+
+class CheckpointCallback(Callback):
+    """
+    Creates the checkpoint directory and optionally setups io redirection.
+    """
+
+    def __init__(self, root_path: Union[str, Path], redirect_io: bool = True):
+        """
+        Initialize the callback with the given root path.
+
+        Args:
+            root_path (Union[str, Path]): The root path where the checkpoint directory will be created.
+            redirect_io (bool, optional): Whether to redirect the IO to a file. Defaults to True.
+        """
+        self.root_path = Path(root_path)
+        self.redirect_io = redirect_io
+        self.io_redirector = None
+
+    def pre_run(self, pipe: 'Pipeline'):
+        if not pipe.checkpoint_dir.is_valid:
+            pipe.checkpoint_dir.create()
+            pipe.checkpoint_dir.save_config(pipe.config)
+
+        self.io_redirector = IORedirector(pipe.checkpoint_dir.log_file)
+        self.io_redirector.install()
+
+    def cleanup(self, pipe, exc_type, exc_value, traceback):
+        if self.io_redirector is not None:
+            self.io_redirector.uninstall()
 
 
 class CsvCallback(Callback):
