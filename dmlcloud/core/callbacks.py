@@ -344,8 +344,14 @@ class CsvCallback(Callback):
         Returns:
             Path: The complete path to the CSV file.
         """
+
         if self.append_stage_name:
-            return self.path / f'metrics_{stage.name}.csv'
+            duplicate_stages = [s for s in stage.pipe.stages if s.name == stage.name]
+            idx = duplicate_stages.index(stage)
+            if len(duplicate_stages) > 1:
+                return self.path / f'metrics_{stage.name}_{idx + 1}.csv'
+            else:
+                return self.path / f'metrics_{stage.name}.csv'
         else:
             return self.path
 
