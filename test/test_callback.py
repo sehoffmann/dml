@@ -2,12 +2,11 @@ import sys
 import time
 
 import dmlcloud as dml
-from dmlcloud.core.callbacks import CallbackList
 import pytest
+from dmlcloud.core.callbacks import CallbackList
 
 
 class DummyCallback(dml.Callback):
-    
     def __init__(self, idx):
         super().__init__()
         self.idx = idx
@@ -22,7 +21,7 @@ class DummyCallback(dml.Callback):
 
     def pre_run(self, pipe):
         self.t_pre_run.append(time.time())
-    
+
     def post_run(self, pipe):
         self.t_post_run.append(time.time())
 
@@ -37,35 +36,33 @@ class DummyCallback(dml.Callback):
 
     def pre_epoch(self, stage):
         self.t_pre_epoch.append(time.time())
-    
+
     def post_epoch(self, stage):
         self.t_post_epoch.append(time.time())
 
 
 class DummyStage(dml.Stage):
-
     def __init__(self, name, epochs):
         super().__init__(name, epochs)
         self.t_pre_stage = []
         self.t_post_stage = []
         self.t_pre_epoch = []
         self.t_post_epoch = []
-    
+
     def pre_stage(self):
         self.t_pre_stage.append(time.time())
-    
+
     def post_stage(self):
         self.t_post_stage.append(time.time())
 
     def pre_epoch(self):
         self.t_pre_epoch.append(time.time())
-    
+
     def post_epoch(self):
         self.t_post_epoch.append(time.time())
 
     def run_epoch(self):
         pass
-
 
 
 class TestCallbackList:
@@ -99,7 +96,6 @@ class TestCallbackList:
         indices = [cb.idx for cb in combined2]
         assert indices == [3, 4, 1, 0, 2]
 
-    
     def test_len(self):
         cb_list = CallbackList()
         assert len(cb_list) == 0
@@ -115,7 +111,6 @@ class TestCallbackList:
 
 
 class TestCallback:
-
     def test_stage_methods(self, torch_distributed):
         pipe = dml.Pipeline()
         stage1 = DummyStage('stage1', 2)
@@ -132,16 +127,16 @@ class TestCallback:
         assert stage1.t_post_epoch[0] < stage1.t_pre_epoch[1]
         assert stage1.t_pre_epoch[1] < stage1.t_post_epoch[1]
         assert stage1.t_post_epoch[1] < stage1.t_post_stage[0]
-    
+
     def test_stage_callback(self, torch_distributed):
         pipe = dml.Pipeline()
         stage1 = DummyStage('stage1', 1)
         stage2 = DummyStage('stage2', 1)
         cb = DummyCallback(0)
-        
+
         pipe.append(stage1)
         pipe.append(stage2)
-        
+
         stage1.add_callback(cb)
 
         pipe.run()
@@ -161,10 +156,10 @@ class TestCallback:
         stage1 = DummyStage('stage1', 1)
         stage2 = DummyStage('stage2', 1)
         cb = DummyCallback(0)
-        
+
         pipe.append(stage1)
         pipe.append(stage2)
-        
+
         stage1.add_callback(cb, priority=-1)
 
         pipe.run()
@@ -179,13 +174,12 @@ class TestCallback:
         assert cb.t_pre_stage[0] < stage1.t_pre_stage[0]
         assert cb.t_post_stage[0] < stage1.t_post_stage[0]
 
-
     def test_pipeline_callback(self, torch_distributed):
         pipe = dml.Pipeline()
         stage1 = DummyStage('stage1', 1)
         stage2 = DummyStage('stage2', 1)
         cb = DummyCallback(0)
-        
+
         pipe.append(stage1)
         pipe.append(stage2)
         pipe.add_callback(cb)
