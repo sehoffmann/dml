@@ -91,7 +91,7 @@ class CbPriority(IntEnum):
     STAGE_TIMER = -180
     DIAGNOSTICS = -170
     GIT = -160
-    METRIC_REDUCTION = -160
+    METRIC_REDUCTION = -150
 
     OBJECT_METHODS = 0
 
