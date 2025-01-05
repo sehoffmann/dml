@@ -362,7 +362,7 @@ class CsvCallback(Callback):
 
             # Write the header if the file is empty
             if f.tell() == 0:
-                writer.writerow(['Epoch'] + list(metrics))
+                writer.writerow(['epoch'] + list(metrics))
 
             row = [stage.current_epoch - 1]  # epoch is already incremented
             for value in metrics.values():
