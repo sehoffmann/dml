@@ -10,6 +10,7 @@ import torch
 from omegaconf import OmegaConf
 from progress_table import ProgressTable
 
+from ..git import git_diff
 from ..util.logging import DevNullIO, experiment_header, general_diagnostics, IORedirector
 from ..util.wandb import wandb_is_initialized, wandb_set_startup_timeout
 from . import logging as dml_logging
@@ -89,6 +90,7 @@ class CbPriority(IntEnum):
     CHECKPOINT = -190
     STAGE_TIMER = -180
     DIAGNOSTICS = -170
+    GIT = -160
     METRIC_REDUCTION = -160
 
     OBJECT_METHODS = 0
@@ -436,3 +438,23 @@ class DiagnosticsCallback(Callback):
         dml_logging.info(f'Finished training in {pipe.stop_time - pipe.start_time} ({pipe.stop_time})')
         if pipe.checkpointing_enabled:
             dml_logging.info(f'Outputs have been saved to {pipe.checkpoint_dir}')
+
+
+class GitDiffCallback(Callback):
+    """
+    A callback that prints a git diff and if checkpointing is enabled, saves it to the checkpoint directory.
+    """
+
+    def pre_run(self, pipe):
+        diff = git_diff()
+
+        if pipe.checkpointing_enabled:
+            self._save(pipe.checkpoint_dir.path / 'git_diff.txt', diff)
+
+        msg = '* GIT-DIFF:\n'
+        msg += '\n'.join('\t' + line for line in diff.splitlines())
+        dml_logging.info(msg)
+
+    def _save(self, path, diff):
+        with open(path, 'w') as f:
+            f.write(diff)

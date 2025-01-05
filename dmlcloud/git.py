@@ -90,5 +90,9 @@ def git_hash(short=False):
 
 
 def git_diff():
+    """
+    Returns the output of `git diff -U0 --no-color HEAD`
+    """
+
     process = run_in_project(['git', 'diff', '-U0', '--no-color', 'HEAD'])
     return process.stdout.decode('utf-8').strip()

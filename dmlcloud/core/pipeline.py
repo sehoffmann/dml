@@ -15,6 +15,7 @@ from .callbacks import (
     CheckpointCallback,
     CsvCallback,
     DiagnosticsCallback,
+    GitDiffCallback,
     WandbCallback,
 )
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
@@ -113,6 +114,7 @@ class Pipeline:
         self.callbacks = CallbackList()
 
         self.add_callback(DiagnosticsCallback(), CbPriority.DIAGNOSTICS)
+        self.add_callback(GitDiffCallback(), CbPriority.GIT)
         self.add_callback(_ForwardCallback(), CbPriority.OBJECT_METHODS)  # methods have priority 0
 
         if dist.is_gloo_available():
