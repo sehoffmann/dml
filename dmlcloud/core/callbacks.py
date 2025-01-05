@@ -1,6 +1,8 @@
 import csv
+import os
 import sys
 from datetime import datetime, timedelta
+from enum import IntEnum
 from pathlib import Path
 from typing import Callable, Optional, TYPE_CHECKING, Union
 
@@ -8,7 +10,7 @@ import torch
 from omegaconf import OmegaConf
 from progress_table import ProgressTable
 
-from ..util.logging import DevNullIO, general_diagnostics, IORedirector
+from ..util.logging import DevNullIO, experiment_header, general_diagnostics, IORedirector
 from ..util.wandb import wandb_is_initialized, wandb_set_startup_timeout
 from . import logging as dml_logging
 from .distributed import all_gather_object, is_root
@@ -20,6 +22,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     'TimedeltaFormatter',
+    'CallbackList',
+    'CbPriority',
     'Callback',
     'TimerCallback',
     'TableCallback',
@@ -43,6 +47,54 @@ class TimedeltaFormatter:
         if not self.microseconds:
             delta -= timedelta(microseconds=delta.microseconds)
         return str(delta)
+
+
+class CallbackList:
+    """
+    A priority queue of callbacks.
+    """
+
+    def __init__(self):
+        self.callbacks = []
+
+    def append(self, callback: 'Callback', priority: int = 0):
+        """
+        Append a callback to the list with the given priority.
+
+        Args:
+            callback (Callback): The callback to append.
+            priority (int, optional): The priority of the callback. Defaults to 0.
+        """
+        self.callbacks.append((priority, callback))
+
+    def __iter__(self):
+        for _, callback in sorted(self.callbacks, key=lambda x: x[0]):
+            yield callback
+
+    def __len__(self):
+        return len(self.callbacks)
+
+    def __add__(self, other: 'CallbackList'):
+        result = CallbackList()
+        result.callbacks = self.callbacks + other.callbacks
+        return result
+
+
+class CbPriority(IntEnum):
+    """
+    Default priorities for callbacks used by the pipeline and stage classes.
+    """
+
+    WANDB = -200
+    CHECKPOINT = -190
+    STAGE_TIMER = -180
+    DIAGNOSTICS = -170
+    METRIC_REDUCTION = -160
+
+    OBJECT_METHODS = 0
+
+    CSV = 110
+    TABLE = 120
 
 
 class Callback:
@@ -130,9 +182,6 @@ class TimerCallback(Callback):
         average_epoch_time = (stage.epoch_end_time - self.start_time) / (stage.current_epoch + 1)
         eta = average_epoch_time * (stage.max_epochs - stage.current_epoch - 1)
         stage.log('misc/eta', eta.total_seconds(), prefixed=False)
-
-        if len(stage.pipe.stages) > 1:
-            dml_logging.info(f'Finished stage in {stage.end_time - stage.start_time}')
 
 
 class TableCallback(Callback):
@@ -255,6 +304,10 @@ class CheckpointCallback(Callback):
         self.io_redirector = IORedirector(pipe.checkpoint_dir.log_file)
         self.io_redirector.install()
 
+        with open(pipe.checkpoint_dir.path / "environment.txt", 'w') as f:
+            for k, v in os.environ.items():
+                f.write(f"{k}={v}\n")
+
     def cleanup(self, pipe, exc_type, exc_value, traceback):
         if self.io_redirector is not None:
             self.io_redirector.uninstall()
@@ -361,6 +414,9 @@ class DiagnosticsCallback(Callback):
     """
 
     def pre_run(self, pipe):
+        header = '\n' + experiment_header(pipe.name, pipe.checkpoint_dir, pipe.start_time)
+        dml_logging.info(header)
+
         diagnostics = general_diagnostics()
 
         diagnostics += '\n* DEVICES:\n'
@@ -371,6 +427,10 @@ class DiagnosticsCallback(Callback):
         diagnostics += '\n'.join(f'    {line}' for line in OmegaConf.to_yaml(pipe.config, resolve=True).splitlines())
 
         dml_logging.info(diagnostics)
+
+    def post_stage(self, stage):
+        if len(stage.pipe.stages) > 1:
+            dml_logging.info(f'Finished stage in {stage.end_time - stage.start_time}')
 
     def post_run(self, pipe):
         dml_logging.info(f'Finished training in {pipe.stop_time - pipe.start_time} ({pipe.stop_time})')

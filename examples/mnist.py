@@ -101,9 +101,9 @@ class MNISTStage(dml.Stage):
 
 def main():
     pipe = dml.Pipeline()
+    pipe.append(MNISTStage(epochs=3))
     pipe.enable_checkpointing('checkpoints')
     pipe.enable_wandb()
-    pipe.append(MNISTStage(epochs=3))
     pipe.run()
 
 

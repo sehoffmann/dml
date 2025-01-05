@@ -1,15 +1,31 @@
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable
 
 from . import logging as dml_logging
-from .callbacks import ReduceMetricsCallback, TableCallback, TimerCallback
+from .callbacks import Callback, CallbackList, CbPriority, ReduceMetricsCallback, TableCallback, TimerCallback
 from .metrics import Tracker, TrainingHistory
 
-if TYPE_CHECKING:
-    from .callbacks import Callback
 
 __all__ = [
     'Stage',
 ]
+
+
+class _ForwardCallback(Callback):
+    """
+    Invokes the pre_stage, post_stage, pre_epoch, and post_epoch methods of the Stage.
+    """
+
+    def pre_stage(self, stage):
+        stage.pre_stage()
+
+    def post_stage(self, stage):
+        stage.post_stage()
+
+    def pre_epoch(self, stage):
+        stage.pre_epoch()
+
+    def post_epoch(self, stage):
+        stage.post_epoch()
 
 
 class Stage:
@@ -25,23 +41,22 @@ class Stage:
         self.name = name or self.__class__.__name__
         self.max_epochs = epochs
 
-        self.callbacks: list[Callback] = []
+        self.callbacks = CallbackList()
 
         self.pipe = None  # set by the pipeline
 
         self.history = TrainingHistory()
         self.tracker = Tracker()
 
-        self._timer = TimerCallback()
-        self.add_callback(self._timer)
-
-        self.add_callback(ReduceMetricsCallback())
-
-        self._table_callback = TableCallback()
-        self.add_callback(self._table_callback)
-
         self.metric_prefix = None
         self.barrier_timeout = None
+
+        self._timer = TimerCallback()
+        self._table_callback = TableCallback()
+        self.add_callback(self._timer, CbPriority.STAGE_TIMER)
+        self.add_callback(ReduceMetricsCallback(), CbPriority.METRIC_REDUCTION)
+        self.add_callback(self._table_callback, CbPriority.TABLE)
+        self.add_callback(_ForwardCallback(), CbPriority.OBJECT_METHODS)  # methods have priority 0
 
     @property
     def device(self):
@@ -75,16 +90,20 @@ class Stage:
     def table(self):
         return self._table_callback.table
 
-    def add_callback(self, callback: 'Callback'):
+    def add_callback(self, callback: 'Callback', priority: int = 1):
         """
         Adds a callback to this stage.
 
-        Callbacks are executed in the order they are added and after the stage-specific hooks.
+        Callbacks are executed based on their priority, with lower values being executed first.
+        Callbacks with the same priority are executed in the order they were added.
+
+        The pre_stage, post_stage, pre_epoch, and post_epoch methods are treated as callbacks with priority 0.
 
         Args:
             callback (StageCallback): The callback to add.
+            priority (int, optional): The priority of the callback. Defaults to 1.
         """
-        self.callbacks.append(callback)
+        self.callbacks.append(callback, priority)
 
     def log(self, name: str, value: Any, reduction: str = 'mean', prefixed: bool = True):
         if prefixed and self.metric_prefix:
@@ -174,28 +193,25 @@ class Stage:
         if len(self.pipe.stages) > 1:
             dml_logging.info(f'\n========== STAGE: {self.name} ==========')
 
-        self.pre_stage()
-
-        for callback in self.callbacks:
+        callbacks = self.callbacks + self.pipe.callbacks
+        for callback in callbacks:
             callback.pre_stage(self)
 
         dml_logging.flush_logger()
-
         self.pipe.barrier(self.barrier_timeout)
 
     def _post_stage(self):
-        self.post_stage()
-        for callback in self.callbacks:
+        callbacks = self.callbacks + self.pipe.callbacks
+        for callback in callbacks:
             callback.post_stage(self)
-
         self.pipe.barrier(self.barrier_timeout)
 
     def _pre_epoch(self):
-        self.pre_epoch()
-        for callback in self.callbacks:
+        callbacks = self.callbacks + self.pipe.callbacks
+        for callback in callbacks:
             callback.pre_epoch(self)
 
     def _post_epoch(self):
-        self.post_epoch()
-        for callback in self.callbacks:
+        callbacks = self.callbacks + self.pipe.callbacks
+        for callback in callbacks:
             callback.post_epoch(self)

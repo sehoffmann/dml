@@ -7,9 +7,16 @@ import torch
 import torch.distributed as dist
 from omegaconf import OmegaConf
 
-from ..util.logging import experiment_header
 from . import logging as dml_logging
-from .callbacks import Callback, CheckpointCallback, CsvCallback, DiagnosticsCallback, WandbCallback
+from .callbacks import (
+    Callback,
+    CallbackList,
+    CbPriority,
+    CheckpointCallback,
+    CsvCallback,
+    DiagnosticsCallback,
+    WandbCallback,
+)
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
 from .distributed import broadcast_object, init, is_root, local_rank
 from .stage import Stage
@@ -18,28 +25,6 @@ from .stage import Stage
 __all__ = [
     'Pipeline',
 ]
-
-
-class _ForwardCallback(Callback):
-    """
-    A callback class that forwards the callback methods to all callbacks in the pipeline.
-    """
-
-    def pre_stage(self, stage):
-        for callback in stage.pipe.callbacks:
-            callback.pre_stage(stage)
-
-    def post_stage(self, stage):
-        for callback in stage.pipe.callbacks:
-            callback.post_stage(stage)
-
-    def pre_epoch(self, stage):
-        for callback in stage.pipe.callbacks:
-            callback.pre_epoch(stage)
-
-    def post_epoch(self, stage):
-        for callback in stage.pipe.callbacks:
-            callback.post_epoch(stage)
 
 
 class _RunGuard:
@@ -72,6 +57,19 @@ class _RunGuard:
             callback.cleanup(self.pipe, exc_type, exc_value, traceback)
 
         return suppress_exception
+
+
+class _ForwardCallback(Callback):
+    """
+    Invokes the pre_run, post_run methods of the Pipeline.
+    Stage-specific callbacks are managed by the Stage object.
+    """
+
+    def pre_run(self, pipe):
+        pipe.pre_run()
+
+    def post_run(self, pipe):
+        pipe.post_run()
 
 
 class Pipeline:
@@ -112,7 +110,10 @@ class Pipeline:
         self.wandb = False
 
         self.stages = []
-        self.callbacks = []
+        self.callbacks = CallbackList()
+
+        self.add_callback(DiagnosticsCallback(), CbPriority.DIAGNOSTICS)
+        self.add_callback(_ForwardCallback(), CbPriority.OBJECT_METHODS)  # methods have priority 0
 
         if dist.is_gloo_available():
             self.gloo_group = dist.new_group(backend='gloo')
@@ -123,14 +124,21 @@ class Pipeline:
     def checkpointing_enabled(self):
         return self.checkpoint_dir is not None
 
-    def add_callback(self, callback: Callback):
+    def add_callback(self, callback: Callback, priority: int = 1):
         """
-        Adds a callback to the pipeline.
+        Adds a callback to this pipeline.
 
-        The callback will be invoked for each stage in the pipeline and are executed in the order they are added.
-        Callbacks added to individual stages will be executed before the pipeline callbacks.
+        Callbacks added to the pipeline and not to individual stages are executed for all stages in the pipeline.
+        Callbacks are executed based on their priority, with lower values being executed first.
+        Callbacks with the same priority are executed in the order they were added.
+
+        Methods of the stage and pipeline objects, e.g. pre_run(), have priority 0.
+
+        Args:
+            callback (StageCallback): The callback to add.
+            priority (int, optional): The priority of the callback. Defaults to 1.
         """
-        self.callbacks.append(callback)
+        self.callbacks.append(callback, priority)
 
     def append(self, stage: Stage):
         if not isinstance(stage, Stage):
@@ -163,8 +171,8 @@ class Pipeline:
         self.checkpoint_dir = CheckpointDir(path)
 
         if is_root():
-            self.add_callback(CheckpointCallback(self.checkpoint_dir.path))
-            self.add_callback(CsvCallback(self.checkpoint_dir.path, append_stage_name=True))
+            self.add_callback(CheckpointCallback(self.checkpoint_dir.path), CbPriority.CHECKPOINT)
+            self.add_callback(CsvCallback(self.checkpoint_dir.path, append_stage_name=True), CbPriority.CSV)
 
     def enable_wandb(
         self,
@@ -182,7 +190,7 @@ class Pipeline:
 
         if is_root():
             project = project or self.name
-            self.add_callback(WandbCallback(project, entity, group, tags, startup_timeout, **kwargs))
+            self.add_callback(WandbCallback(project, entity, group, tags, startup_timeout, **kwargs), CbPriority.WANDB)
 
         self.wandb = True
 
@@ -199,11 +207,6 @@ class Pipeline:
         """
         if len(self.stages) == 0:
             raise ValueError('No stages defined. Use append() to add stages to the pipeline.')
-
-        for stage in self.stages:
-            stage.add_callback(_ForwardCallback())  # forward callbacks to pipeline callbacks
-
-        self.add_callback(DiagnosticsCallback())
 
         # make sure everything is set up before starting the run
         # important to prevent checkpoint dir creation before all processes searched for it
@@ -242,13 +245,8 @@ class Pipeline:
     def _pre_run(self):
         self.start_time = datetime.now()
 
-        header = '\n' + experiment_header(self.name, self.checkpoint_dir, self.start_time)
-        dml_logging.info(header)
-
         if self.resumed:
             self._resume_run()
-
-        self.pre_run()
 
         for callback in self.callbacks:
             callback.pre_run(self)
@@ -259,8 +257,6 @@ class Pipeline:
 
     def _post_run(self):
         self.stop_time = datetime.now()
-
-        self.post_run()
 
         for callback in self.callbacks:
             callback.post_run(self)
