@@ -16,6 +16,7 @@ from .callbacks import (
     CsvCallback,
     DiagnosticsCallback,
     GitDiffCallback,
+    TensorboardCallback,
     WandbCallback,
 )
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
@@ -175,6 +176,7 @@ class Pipeline:
         if is_root():
             self.add_callback(CheckpointCallback(self.checkpoint_dir.path), CbPriority.CHECKPOINT)
             self.add_callback(CsvCallback(self.checkpoint_dir.path, append_stage_name=True), CbPriority.CSV)
+            self.add_callback(TensorboardCallback(self.checkpoint_dir.path), CbPriority.TENSORBOARD)
 
     def enable_wandb(
         self,

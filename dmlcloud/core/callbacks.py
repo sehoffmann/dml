@@ -9,6 +9,7 @@ from typing import Callable, Optional, TYPE_CHECKING, Union
 import torch
 from omegaconf import OmegaConf
 from progress_table import ProgressTable
+from torch.utils.tensorboard import SummaryWriter
 
 from ..git import git_diff
 from ..util.logging import DevNullIO, experiment_header, general_diagnostics, IORedirector
@@ -32,6 +33,7 @@ __all__ = [
     'CheckpointCallback',
     'CsvCallback',
     'WandbCallback',
+    'TensorboardCallback',
 ]
 
 
@@ -96,6 +98,7 @@ class CbPriority(IntEnum):
     OBJECT_METHODS = 0
 
     CSV = 110
+    TENSORBOARD = 110
     TABLE = 120
 
 
@@ -414,6 +417,26 @@ class WandbCallback(Callback):
     def cleanup(self, pipe, exc_type, exc_value, traceback):
         if wandb_is_initialized():
             self.wandb.finish(exit_code=0 if exc_type is None else 1)
+
+
+class TensorboardCallback(Callback):
+    """
+    A callback that logs metrics to Tensorboard.
+    """
+
+    def __init__(self, log_dir: Union[str, Path]):
+        self.log_dir = Path(log_dir)
+
+    def pre_run(self, pipe):
+        self.writer = SummaryWriter(log_dir=self.log_dir)
+
+    def post_epoch(self, stage: 'Stage'):
+        metrics = stage.history.last()
+        for key, value in metrics.items():
+            self.writer.add_scalar(key, value.item(), stage.current_epoch)
+
+    def cleanup(self, pipe, exc_type, exc_value, traceback):
+        self.writer.close()
 
 
 class DiagnosticsCallback(Callback):
