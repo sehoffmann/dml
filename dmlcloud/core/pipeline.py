@@ -14,6 +14,7 @@ from .callbacks import (
     CbPriority,
     CheckpointCallback,
     CsvCallback,
+    CudaCallback,
     DiagnosticsCallback,
     GitDiffCallback,
     TensorboardCallback,
@@ -177,6 +178,9 @@ class Pipeline:
             self.add_callback(CheckpointCallback(self.checkpoint_dir.path), CbPriority.CHECKPOINT)
             self.add_callback(CsvCallback(self.checkpoint_dir.path, append_stage_name=True), CbPriority.CSV)
             self.add_callback(TensorboardCallback(self.checkpoint_dir.path), CbPriority.TENSORBOARD)
+
+        if self.device.type == 'cuda':
+            self.add_callback(CudaCallback(), CbPriority.CUDA)
 
     def enable_wandb(
         self,

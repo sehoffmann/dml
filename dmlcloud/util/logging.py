@@ -1,6 +1,5 @@
 import io
 import os
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -114,20 +113,15 @@ def general_diagnostics() -> str:
     msg += f'    - backend: {dist.get_backend()}\n'
     msg += f'    - cuda: {torch.cuda.is_available()}\n'
 
-    if torch.cuda.is_available():
-        msg += '* GPUs (root):\n'
-        nvsmi = subprocess.run(['nvidia-smi', '-L'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.decode()
-        for line in nvsmi.splitlines():
-            msg += f'    - {line}\n'
-
     msg += '* VERSIONS:\n'
     msg += f'    - python: {sys.version}\n'
-    msg += f'    - dmlcloud: {dmlcloud.__version__}\n'
-    msg += f'    - cuda: {torch.version.cuda}\n'
+    msg += f'    - cuda (torch): {torch.version.cuda}\n'
     try:
         msg += '      - ' + Path('/proc/driver/nvidia/version').read_text().splitlines()[0] + '\n'
     except (FileNotFoundError, IndexError):
         pass
+
+    msg += f'    - dmlcloud: {dmlcloud.__version__}\n'
 
     for module_name in ML_MODULES:
         if is_imported(module_name):

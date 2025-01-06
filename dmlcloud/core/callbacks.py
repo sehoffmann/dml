@@ -1,4 +1,5 @@
 import csv
+import json
 import os
 import sys
 from datetime import datetime, timedelta
@@ -6,6 +7,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Callable, Optional, TYPE_CHECKING, Union
 
+import pynvml
 import torch
 from omegaconf import OmegaConf
 from progress_table import ProgressTable
@@ -15,6 +17,7 @@ from ..util.logging import DevNullIO, experiment_header, general_diagnostics, IO
 from ..util.wandb import wandb_is_initialized, wandb_set_startup_timeout
 from . import logging as dml_logging
 from .distributed import all_gather_object, is_root
+
 
 if TYPE_CHECKING:
     from .pipeline import Pipeline
@@ -33,6 +36,7 @@ __all__ = [
     'CsvCallback',
     'WandbCallback',
     'TensorboardCallback',
+    'CudaCallback',
 ]
 
 
@@ -91,8 +95,9 @@ class CbPriority(IntEnum):
     CHECKPOINT = -190
     STAGE_TIMER = -180
     DIAGNOSTICS = -170
-    GIT = -160
-    METRIC_REDUCTION = -150
+    CUDA = -160
+    GIT = -150
+    METRIC_REDUCTION = -100
 
     OBJECT_METHODS = 0
 
@@ -482,13 +487,60 @@ class GitDiffCallback(Callback):
     def pre_run(self, pipe):
         diff = git_diff()
 
-        if pipe.checkpointing_enabled:
+        if pipe.checkpointing_enabled and is_root():
             self._save(pipe.checkpoint_dir.path / 'git_diff.txt', diff)
 
         msg = '* GIT-DIFF:\n'
-        msg += '\n'.join('\t' + line for line in diff.splitlines())
+        msg += '\n'.join('    ' + line for line in diff.splitlines())
         dml_logging.info(msg)
 
     def _save(self, path, diff):
         with open(path, 'w') as f:
             f.write(diff)
+
+
+class CudaCallback(Callback):
+    """
+    Logs various properties pertaining to CUDA devices.
+    """
+
+    def pre_run(self, pipe):
+        handle = torch.cuda._get_pynvml_handler(pipe.device)
+
+        info = {
+            'name': pynvml.nvmlDeviceGetName(handle),
+            'uuid': pynvml.nvmlDeviceGetUUID(handle),
+            'serial': pynvml.nvmlDeviceGetSerial(handle),
+            'torch_device': str(pipe.device),
+            'minor_number': pynvml.nvmlDeviceGetMinorNumber(handle),
+            'architecture': pynvml.nvmlDeviceGetArchitecture(handle),
+            'brand': pynvml.nvmlDeviceGetBrand(handle),
+            'vbios_version': pynvml.nvmlDeviceGetVbiosVersion(handle),
+            'driver_version': pynvml.nvmlSystemGetDriverVersion(),
+            'cuda_driver_version': pynvml.nvmlSystemGetCudaDriverVersion_v2(),
+            'nvml_version': pynvml.nvmlSystemGetNVMLVersion(),
+            'total_memory': pynvml.nvmlDeviceGetMemoryInfo(handle, pynvml.nvmlMemory_v2).total,
+            'reserved_memory': pynvml.nvmlDeviceGetMemoryInfo(handle, pynvml.nvmlMemory_v2).reserved,
+            'num_gpu_cores': pynvml.nvmlDeviceGetNumGpuCores(handle),
+            'power_managment_limit': pynvml.nvmlDeviceGetPowerManagementLimit(handle),
+            'power_managment_default_limit': pynvml.nvmlDeviceGetPowerManagementDefaultLimit(handle),
+            'cuda_compute_capability': pynvml.nvmlDeviceGetCudaComputeCapability(handle),
+        }
+        all_devices = all_gather_object(info)
+
+        msg = '* CUDA-DEVICES:\n'
+        info_strings = [
+            f'{info["torch_device"]} -> /dev/nvidia{info["minor_number"]} -> {info["name"]} (UUID: {info["uuid"]}) (VRAM: {info["total_memory"] / 1000 ** 2:.0f} MB)'
+            for info in all_devices
+        ]
+        msg += '\n'.join(f'    - [{i}] {info_str}' for i, info_str in enumerate(info_strings))
+        dml_logging.info(msg)
+
+        if pipe.checkpointing_enabled and is_root():
+            self._save(pipe.checkpoint_dir.path / 'cuda_devices.json', all_devices)
+
+    def _save(self, path, all_devices):
+        with open(path, 'w') as f:
+            devices = {f'rank_{i}': device for i, device in enumerate(all_devices)}
+            obj = {'devices': devices}
+            json.dump(obj, f, indent=4)
