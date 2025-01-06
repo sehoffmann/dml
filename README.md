@@ -9,35 +9,42 @@ A torch library for easy distributed deep learning on HPC clusters. Supports bot
 ## Highlights
 - Simple, yet powerful, API
 - Easy initialization of `torch.distributed`
-- Distributed checkpointing and metrics
+- Distributed metrics
 - Extensive logging and diagnostics
 - Wandb support
+- Tensorboard support
 - A wealth of useful utility functions
 
 ## Installation
 dmlcloud can be installed directly from PyPI:
-```
+```bash
 pip install dmlcloud
 ```
 
 Alternatively, you can install the latest development version directly from Github:
-```
+```bash
 pip install git+https://github.com/sehoffmann/dmlcloud.git
 ```
 
 ## Minimal Example
-See [examples/mnist.py](https://github.com/sehoffmann/dmlcloud/blob/develop/examples/mnist.py) for a minimal and barebone example on how to distributely train MNIST.
-To run it on a single node with 4 GPUs, use
+See [examples/mnist.py](https://github.com/sehoffmann/dmlcloud/blob/develop/examples/mnist.py) for a minimal example on how to train MNIST with multiple GPUS. To run it with 4 GPUs, use
+```bash
+dmlrun -n 4 python examples/mnist.py
 ```
-dmlrun -n 4 python examples/barebone_mnist.py
-```
+`dmlrun` is a thin wrapper around `torchrun` that makes it easier to prototype on a single node.
 
-`dmlrun` is a thin wrapper around `torchrun` that makes development work on a single node easier.
+## Slurm Support
+*dmlcloud* automatically looks for slurm environment variables to initialize torch.distributed. On a slurm cluster, you can hence simply use `srun` from within an sbatch script to train on multiple nodes:
 
+```bash
+#!/bin/bash
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=8
+#SBATCH --gpu-bind=none
 
-To run your training across multiple nodes on a slurm cluster instead, you can simply use `srun`:
-```
-srun --ntasks-per-node [NUM_GPUS] python examples/barebone_mnist.py
+srun python examples/mnist.py
 ```
 
 ## Documentation
