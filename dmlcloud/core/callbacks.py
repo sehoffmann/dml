@@ -460,10 +460,6 @@ class DiagnosticsCallback(Callback):
 
         diagnostics = general_diagnostics()
 
-        diagnostics += '\n* DEVICES:\n'
-        devices = all_gather_object(str(pipe.device))
-        diagnostics += '\n'.join(f'    - [Rank {i}] {device}' for i, device in enumerate(devices))
-
         diagnostics += '\n* CONFIG:\n'
         diagnostics += '\n'.join(f'    {line}' for line in OmegaConf.to_yaml(pipe.config, resolve=True).splitlines())
 
