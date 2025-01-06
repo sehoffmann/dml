@@ -36,6 +36,15 @@ jobs:
         run: |
           pip install .
 
-      - name: Run Tests
-        run:
-          pytest --no-header -v test
+      - name: Run tests & coverage
+        run: |
+          coverage run -m pytest --no-header -v test
+          coverage report -m -i
+          coverage html -i
+
+      - name: Archive coverage results
+        if: runner.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: htmlcov
