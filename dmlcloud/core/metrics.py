@@ -204,3 +204,9 @@ class Tracker(torch.nn.Module):
         for metric in self.metrics.values():
             metric.reset()
         self.metrics.clear()
+
+    def __getitem__(self, name: str):
+        return self.metrics[name]
+
+    def __setitem__(self, name: str, metric: torchmetrics.Metric):
+        self.add_metric(name, metric)

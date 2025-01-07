@@ -188,9 +188,10 @@ class TimerCallback(Callback):
         stage.log('misc/epoch_time', (stage.epoch_end_time - self.epoch_start_time).total_seconds(), prefixed=False)
         stage.log('misc/total_time', (stage.epoch_end_time - self.start_time).total_seconds(), prefixed=False)
 
-        average_epoch_time = (stage.epoch_end_time - self.start_time) / (stage.current_epoch + 1)
-        eta = average_epoch_time * (stage.max_epochs - stage.current_epoch - 1)
-        stage.log('misc/eta', eta.total_seconds(), prefixed=False)
+        if stage._run_epoch_overridden:
+            average_epoch_time = (stage.epoch_end_time - self.start_time) / (stage.current_epoch + 1)
+            eta = average_epoch_time * (stage.max_epochs - stage.current_epoch - 1)
+            stage.log('misc/eta', eta.total_seconds(), prefixed=False)
 
 
 class TableCallback(Callback):
@@ -203,21 +204,21 @@ class TableCallback(Callback):
         self.tracked_metrics = {}
         self.formatters = {}
 
-    @property
-    def table(self):
+    def get_table(self, stage: 'Stage'):
         if self._table is None:
-            self.table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
-            self.track_metric('Epoch', width=5)
-            self.track_metric('Took', 'misc/epoch_time', formatter=TimedeltaFormatter(), width=7)
-            self.track_metric('ETA', 'misc/eta', formatter=TimedeltaFormatter(), width=7)
+            self._table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
+            self.track_metric(stage, 'Epoch', width=5)
+            self.track_metric(stage, 'Took', 'misc/epoch_time', formatter=TimedeltaFormatter(), width=7)
+            if stage._run_epoch_overridden:
+                self.track_metric(stage, 'ETA', 'misc/eta', formatter=TimedeltaFormatter(), width=7)
         return self._table
 
-    @table.setter
-    def table(self, value):
+    def set_table(self, value):
         self._table = value
 
     def track_metric(
         self,
+        stage: 'Stage',
         name: str,
         metric: Optional[str] = None,
         formatter: Optional[Callable] = None,
@@ -244,27 +245,27 @@ class TableCallback(Callback):
         if formatter and not metric:
             raise ValueError('Cannot provide a formatter without a metric name')
 
-        self.table.add_column(name, width=width, color=color, alignment=alignment)
+        self.get_table(stage).add_column(name, width=width, color=color, alignment=alignment)
 
         if metric:
             self.tracked_metrics[name] = metric
             self.formatters[name] = formatter
 
     def pre_stage(self, stage: 'Stage'):
-        _ = self.table  # Ensure the table has been created at this point
+        self.get_table(stage)  # Ensure the table has been created at this point
 
     def post_stage(self, stage: 'Stage'):
-        self.table.close()
+        self.get_table(stage).close()
 
     def pre_epoch(self, stage: 'Stage'):
-        if 'Epoch' in self.table.column_names:
-            self.table['Epoch'] = stage.current_epoch
+        if 'Epoch' in self.get_table(stage).column_names:
+            self.get_table(stage)['Epoch'] = stage.current_epoch
 
     def post_epoch(self, stage: 'Stage'):
         metrics = stage.history.last()
 
         for column_name, metric_name in self.tracked_metrics.items():
-            if column_name not in self.table.column_names:
+            if column_name not in self.get_table(stage).column_names:
                 continue
 
             value = metrics[metric_name]
@@ -272,9 +273,9 @@ class TableCallback(Callback):
             if formatter is not None:
                 value = formatter(value)
 
-            self.table.update(column_name, value)
+            self.get_table(stage).update(column_name, value)
 
-        self.table.next_row()
+        self.get_table(stage).next_row()
 
 
 class ReduceMetricsCallback(Callback):
@@ -283,7 +284,7 @@ class ReduceMetricsCallback(Callback):
     """
 
     def post_epoch(self, stage: 'Stage'):
-        metrics = stage.tracker.reduce()
+        metrics = stage.metrics.reduce()
         stage.history.append_metrics(**metrics)
         stage.history.next_step()
 
@@ -388,15 +389,15 @@ class WandbCallback(Callback):
     A callback that logs metrics to Weights & Biases.
     """
 
-    def __init__(self, entity, project, group, tags, startup_timeout, **kwargs):
+    def __init__(self, project, entity, group, tags, startup_timeout, **kwargs):
         try:
             import wandb
         except ImportError:
             raise ImportError('wandb is required for the WandbCallback')
 
         self.wandb = wandb
-        self.entity = entity
         self.project = project
+        self.entity = entity
         self.group = group
         self.tags = tags
         self.startup_timeout = startup_timeout
@@ -407,8 +408,8 @@ class WandbCallback(Callback):
         self.wandb.init(
             config=OmegaConf.to_container(pipe.config, resolve=True),
             name=pipe.name,
-            entity=self.entity,
             project=self.project,
+            entity=self.entity,
             group=self.group,
             tags=self.tags,
             **self.kwargs,

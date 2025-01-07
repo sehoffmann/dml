@@ -7,4 +7,4 @@ on the MNIST dataset using dmlcloud.
 | Example | Description |
 | --- | --- |
 | [mnist.py](mnist.py) | Minimal example that demonstrates how to train a simple neural network on the MNIST dataset using dmlcloud. |
-| - | - |
+| [custom_epochs.py](custom_epochs.py) | Demonstrates how to fully control when "epochs" start and end, e.g. for reinforcement learning or LLM training. |

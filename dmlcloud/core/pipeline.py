@@ -197,8 +197,15 @@ class Pipeline:
         import wandb  # import now to avoid potential long import times later on  # noqa
 
         if is_root():
-            project = project or self.name
-            self.add_callback(WandbCallback(project, entity, group, tags, startup_timeout, **kwargs), CbPriority.WANDB)
+            callback = WandbCallback(
+                project=project,
+                entity=entity,
+                group=group,
+                tags=tags,
+                startup_timeout=startup_timeout,
+                **kwargs,
+            )
+            self.add_callback(callback, CbPriority.WANDB)
 
         self.wandb = True
 
@@ -224,7 +231,7 @@ class Pipeline:
             self._pre_run()
             for stage in self.stages:
                 self.current_stage = stage
-                stage.run()
+                stage._run()
             self._post_run()
 
     def pre_run(self):

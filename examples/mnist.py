@@ -1,7 +1,3 @@
-import sys
-
-sys.path.insert(0, './')
-
 import dmlcloud as dml
 import torch
 import torchmetrics
@@ -100,7 +96,7 @@ class MNISTStage(dml.Stage):
 
 
 def main():
-    pipe = dml.Pipeline()
+    pipe = dml.Pipeline(name='MNIST')
     pipe.append(MNISTStage(epochs=3))
     pipe.enable_checkpointing('checkpoints')
     pipe.enable_wandb()

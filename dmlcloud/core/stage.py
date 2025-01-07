@@ -37,7 +37,7 @@ class Stage:
         - post_epoch()
     """
 
-    def __init__(self, name: str = None, epochs: int = 1):
+    def __init__(self, name: str = None, epochs: int | None = 1):
         self.name = name or self.__class__.__name__
         self.max_epochs = epochs
 
@@ -46,7 +46,7 @@ class Stage:
         self.pipe = None  # set by the pipeline
 
         self.history = TrainingHistory()
-        self.tracker = Tracker()
+        self.metrics = Tracker()
 
         self.metric_prefix = None
         self.barrier_timeout = None
@@ -88,7 +88,15 @@ class Stage:
 
     @property
     def table(self):
-        return self._table_callback.table
+        return self._table_callback.get_table(self)
+
+    @property
+    def _run_overridden(self):
+        return type(self).run != Stage.run
+
+    @property
+    def _run_epoch_overridden(self):
+        return type(self).run_epoch != Stage.run_epoch
 
     def add_callback(self, callback: 'Callback', priority: int = 1):
         """
@@ -108,11 +116,11 @@ class Stage:
     def log(self, name: str, value: Any, reduction: str = 'mean', prefixed: bool = True):
         if prefixed and self.metric_prefix:
             name = f'{self.metric_prefix}/{name}'
-        self.tracker.log(name, value, reduction)
+        self.metrics.log(name, value, reduction)
 
     def add_metric(self, name, metric):
         metric = metric.to(self.device)
-        self.tracker.add_metric(name, metric)
+        self.metrics.add_metric(name, metric)
         return metric
 
     def add_column(
@@ -143,7 +151,7 @@ class Stage:
             alignment (str, optional): The alignment of the column. Defaults to None.
         """
         self._table_callback.track_metric(
-            name, metric=metric, formatter=formatter, width=width, color=color, alignment=alignment
+            self, name, metric=metric, formatter=formatter, width=width, color=color, alignment=alignment
         )
 
     def pre_stage(self):
@@ -172,22 +180,58 @@ class Stage:
         """
         pass
 
-    def run_epoch(self):
+    def run():
         """
-        Train the model for one epoch. Must be implemented by subclasses.
+        Override this method to implement the main logic of the stage and do manual epoch management.
+
+        Either this method or :meth:`run_epoch` must be implemented by subclasses.
+        Unlike :meth:`run_epoch`, this method is called only once per stage, and the implementation is responsible for
+        managing the epochs and calling :meth:`next_epoch` when appropriate.
         """
         raise NotImplementedError()
 
-    def run(self):
+    def next_epoch(self):
+        """
+        Advances the stage to the next epoch.
+
+        This method must only be called by the implementation of :meth:`run` when the stage finishes an epoch.
+        """
+        if self._run_epoch_overridden:
+            raise ValueError('next_epoch() must not be called when run_epoch() is implemented.')
+
+        self._post_epoch()
+        self._pre_epoch()
+
+    def run_epoch(self):
+        """
+        Override this method to implement the main logic of the stage for a single epoch.
+
+        Either this method or :meth:`run` must be implemented by subclasses.
+        Unlike :meth:`run`, this method is called automatically by the stage and does not need to manage the epochs.
+        """
+        raise NotImplementedError()
+
+    def _run(self):
         """
         Runs this stage. Either until max_epochs are reached, or until stop_stage() is called.
         """
-        self._pre_stage()
-        while self.max_epochs is None or self.current_epoch < self.max_epochs:
+        if self._run_overridden and self._run_epoch_overridden:
+            raise ValueError('Only one of run() or run_epoch() must be implemented.')
+        elif not self._run_overridden and not self._run_epoch_overridden:
+            raise ValueError('Either run() or run_epoch() must be implemented.')
+        elif self._run_epoch_overridden:
+            self._pre_stage()
+            while self.max_epochs is None or self.current_epoch < self.max_epochs:
+                self._pre_epoch()
+                self.run_epoch()
+                self._post_epoch()
+            self._post_stage()
+        else:
+            self._pre_stage()
             self._pre_epoch()
-            self.run_epoch()
+            self.run()
             self._post_epoch()
-        self._post_stage()
+            self._post_stage()
 
     def _pre_stage(self):
         if len(self.pipe.stages) > 1:
