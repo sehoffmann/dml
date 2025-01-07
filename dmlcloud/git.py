@@ -35,14 +35,18 @@ def is_setuptools_cli_script(module):
     return True
 
 
-def script_path():
+def script_path() -> Path | None:
     """
     Returns the path to the script or module that was executed.
-    If python runs in interactive mode, or if "-c" command line option was used, raises a RuntimeError.
+
+    Returns None if python runs in interactive mode, or if "-c" command line option was used.
+
+    Returns:
+        Path to the script or module that was executed or None if not available.
     """
     main = sys.modules['__main__']
     if not hasattr(main, '__file__'):
-        raise RuntimeError('script_path() is not supported in interactive mode')
+        return None  # interactive mode
 
     if is_setuptools_cli_script(main):
         stack = traceback.extract_stack()
@@ -54,45 +58,87 @@ def script_path():
         return Path(main.__file__).resolve()
 
 
-def script_dir():
+def script_directory() -> Path | None:
     """
     Returns the directory containing the script or module that was executed.
-    If python runs in interactive mode, or if "-c" command line option was used, then raises RuntimeError.
+
+    Returns None if python runs in interactive mode, or if "-c" command line option was used.
+
+    Returns:
+        Directory containing the script or module that was executed or None if not available.
     """
-    return script_path().parent
+    file = script_path()
+    if file is None:
+        return None
+    else:
+        return file.parent
 
 
-def project_dir():
+def project_dir() -> Path | None:
     """
     Returns the top-level directory containing the script or module that was executed.
-    If python runs in interactive mode, or if "-c" command line option was used, then raises RuntimeError.
+
+    Returns None if python runs in interactive mode, or if "-c" command line option was used.
+
+    Returns:
+        Top-level directory containing the script or module that was executed or None if not available.
     """
-    cur_dir = script_dir()
+    cur_dir = script_directory()
+    if cur_dir is None:
+        return None
+
     while (cur_dir / '__init__.py').exists():
         cur_dir = cur_dir.parent
     return cur_dir
 
 
-def run_in_project(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs):
+def run_in_project(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs) -> subprocess.CompletedProcess:
     """
     Runs a command in the project directory and returns the output.
+
+    Raises:
+        RuntimeError: If the project directory could not be determined.
     """
     cwd = project_dir()
+    if cwd is None:
+        raise RuntimeError('Could not determine project directory')
     return subprocess.run(cmd, cwd=cwd, stdout=stdout, stderr=stderr, **kwargs)
 
 
-def git_hash(short=False):
-    if short:
-        process = run_in_project(['git', 'rev-parse', '--short', 'HEAD'])
-    else:
-        process = run_in_project(['git', 'rev-parse', 'HEAD'])
-    return process.stdout.decode('utf-8').strip()
+def git_hash(short=False) -> str | None:
+    """
+    Returns the git hash of the current commit.
+
+    If git is not available or the project is not a git repository, None is returned.
+
+    Args:
+        short: If True, the short hash is returned.
+
+    Returns:
+        The git hash of the current commit or None if not available.
+    """
+    try:
+        if short:
+            process = run_in_project(['git', 'rev-parse', '--short', 'HEAD'])
+        else:
+            process = run_in_project(['git', 'rev-parse', 'HEAD'])
+        return process.stdout.decode('utf-8').strip()
+    except RuntimeError:
+        return None
 
 
-def git_diff():
+def git_diff() -> str | None:
     """
     Returns the output of `git diff -U0 --no-color HEAD`
+
+    If git is not available or the project is not a git repository, None is returned.
+
+    Returns:
+        The output of `git diff -U0 --no-color HEAD` or None if not available.
     """
 
-    process = run_in_project(['git', 'diff', '-U0', '--no-color', 'HEAD'])
-    return process.stdout.decode('utf-8').strip()
+    try:
+        process = run_in_project(['git', 'diff', '-U0', '--no-color', 'HEAD'])
+        return process.stdout.decode('utf-8').strip()
+    except RuntimeError:
+        return None

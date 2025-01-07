@@ -482,6 +482,8 @@ class GitDiffCallback(Callback):
 
     def pre_run(self, pipe):
         diff = git_diff()
+        if diff is None:
+            return
 
         if pipe.checkpointing_enabled and is_root():
             self._save(pipe.checkpoint_dir.path / 'git_diff.txt', diff)
