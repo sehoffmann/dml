@@ -43,7 +43,7 @@ jobs:
           coverage html -i
 
       - name: Archive coverage results
-        if: runner.os == 'ubuntu-latest'
+        if: startsWith(matrix.os, 'ubuntu')
         uses: actions/upload-artifact@v4
         with:
           name: code-coverage-report
