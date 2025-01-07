@@ -15,7 +15,7 @@ import warnings
 import torch
 import torch.distributed
 
-from . import distributed as dmldist
+from . import distributed as dml_distributed
 
 
 logger = logging.getLogger('dmlcloud')
@@ -173,16 +173,16 @@ def print_worker(*values, sep=' ', end="\n", file=None, flush=True, barrier=Fals
 
     if barrier:
         torch.distributed.barrier()
-    modified_values = [f'Worker {dmldist.rank()}']
-    if dmldist.local_node() is not None:
-        modified_values += [f'({dmldist.local_node()}.{dmldist.local_rank()})']
+    modified_values = [f'Worker {dml_distributed.rank()}']
+    if dml_distributed.local_node() is not None:
+        modified_values += [f'({dml_distributed.local_node()}.{dml_distributed.local_rank()})']
     modified_values.extend(values)
     print(*modified_values, sep=sep, end=end, file=file, flush=flush)
     if barrier:
         torch.distributed.barrier()
 
 
-@dmldist.root_only
+@dml_distributed.root_only
 def print_root(*values, sep=' ', end="\n", file=None, flush=True):
     """
     Print the values to a stream if the current rank is the root rank.

@@ -1,11 +1,20 @@
+import inspect
 import os
+import sys
 from contextlib import contextmanager
+from datetime import timedelta
 from functools import wraps
+from typing import Callable, TYPE_CHECKING
 
 import torch
+import torch.distributed
 import torch.distributed as dist
 
 from ..util.tcp import find_free_port, get_local_ips
+
+
+if TYPE_CHECKING:
+    from dmlcloud import Pipeline, Stage  # noqa: F401
 
 
 __all__ = [
@@ -29,6 +38,7 @@ __all__ = [
 
 
 DEFAULT_PORT = os.environ.get('DMLCLOUD_PORT', 41312)  # dml
+LONG_TIMEOUT = 24 * 60 * 60  # timeout for long running barriers, default is 24 hours
 
 
 class _WorkerInfo:
@@ -75,40 +85,161 @@ def has_mpi():
         return False
 
 
-def is_root():
+def is_root(group: dist.ProcessGroup = None):
     """
     Check if the current rank is the root rank (rank 0).
+
+    Args:
+        group (ProcessGroup, optional): The process group to work on. If None (default), the default process group will be used.
     """
-    return dist.get_rank() == 0
+    return dist.get_rank(group) == 0
 
 
-def root_only(fn):
+def root_only(
+    fn: Callable | type,
+    group: torch.distributed.ProcessGroup = None,
+    synchronize: bool = True,
+    timeout: int = LONG_TIMEOUT,
+) -> Callable | type:
     """
     Decorator for methods that should only be called on the root rank.
+
+    Can also be applied to individual callback methods of :class:`Pipeline` and :class:`Stage`, or to the whole class.
+    In that case, :attr:`Pipeline.gloo_group` is used as process group.
+
+    If ``synchronize=True``, a monitored_barrier before or after the function call depending on the rank.
+    This can be important to prevent timeouts from future all_reduce operations if non-root ranks move on before the root rank has finished.
+
+    Args:
+        fn: The function to decorate or a subclass of :class:`Pipeline` or :class:`Stage`.
+        group: The process group to work on. If None (default), the default process group will be used.
+        synchronize: If True, a barrier is inserted before or after the function call depending on the rank. Default is True.
+        timeout: Timeout in seconds for the monitored_barrier. Default is 24 hours.
+
+    Returns:
+        The decorated function or class.
+
+    Examples:
+
+        Annotating an individual function:
+
+        >>> @root_only
+        >>> def my_function():
+        >>>     print('Only the root rank prints this.')
+
+        Annotating a whole :class:`Stage` subclass:
+
+        >>> @root_only
+        >>> class MyStage(Stage):
+        >>>     def pre_stage(self):
+        >>>         print('Only the root rank prints this.')
+        >>>
+        >>>     def run_epoch(self):
+        >>>         print('Only the root rank prints this.')
+        >>>
+        >>>     def post_stage(self):
+        >>>         print('Only the root rank prints this.')
+
+        Annotating individual methods of :class:`Stage`:
+
+        >>> class MyStage(Stage):
+        >>>     def pre_stage(self):
+        >>>         print('All ranks print this.')
+        >>>
+        >>>     @root_only
+        >>>     def post_stage(self):
+        >>>         print('Only the root rank prints this.')
     """
 
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if is_root():
-            return fn(*args, **kwargs)
+    if not inspect.isclass(fn):
 
-    return wrapper
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if is_root(group):
+                ret = fn(*args, **kwargs)
+                if synchronize:
+                    dist.monitored_barrier(group, timeout=timedelta(seconds=timeout), wait_all_ranks=True)
+                return ret
+            elif synchronize:
+                dist.monitored_barrier(group, timeout=timedelta(seconds=timeout), wait_all_ranks=True)
+
+        return wrapper
+
+    elif 'dmlcloud.core.pipeline' in sys.modules and issubclass(
+        fn, sys.modules['dmlcloud.core.pipeline'].Pipeline
+    ):  # avoids circular imports
+        pipeline_cls = fn
+
+        def make_wrapper(method):
+            @wraps(method)
+            def pipeline_wrapper(self, *args, **kwargs):
+                if is_root(group):
+                    ret = method(self, *args, **kwargs)
+                    if synchronize:
+                        dist.monitored_barrier(self.gloo_group, timeout=timedelta(seconds=timeout), wait_all_ranks=True)
+                    return ret
+                elif synchronize:
+                    dist.monitored_barrier(self.gloo_group, timeout=timedelta(seconds=timeout), wait_all_ranks=True)
+
+            return pipeline_wrapper
+
+        pipeline_cls.pre_run = make_wrapper(pipeline_cls.pre_run)
+        pipeline_cls.post_run = make_wrapper(pipeline_cls.post_run)
+
+        return pipeline_cls
+
+    elif 'dmlcloud.core.stage' in sys.modules and issubclass(
+        fn, sys.modules['dmlcloud.core.stage'].Stage
+    ):  # avoids circular imports
+        stage_cls = fn
+
+        def make_wrapper(method):
+            @wraps(method)
+            def stage_wrapper(self, *args, **kwargs):
+                if is_root(group):
+                    ret = method(self, *args, **kwargs)
+                    if synchronize:
+                        dist.monitored_barrier(
+                            self.pipe.gloo_group, timeout=timedelta(seconds=timeout), wait_all_ranks=True
+                        )
+                    return ret
+                elif synchronize:
+                    dist.monitored_barrier(
+                        self.pipe.gloo_group, timeout=timedelta(seconds=timeout), wait_all_ranks=True
+                    )
+
+            return stage_wrapper
+
+        stage_cls.pre_stage = make_wrapper(stage_cls.pre_stage)
+        stage_cls.post_stage = make_wrapper(stage_cls.post_stage)
+        stage_cls.pre_epoch = make_wrapper(stage_cls.pre_epoch)
+        stage_cls.post_epoch = make_wrapper(stage_cls.post_epoch)
+        stage_cls.run_epoch = make_wrapper(stage_cls.run_epoch)
+
+        return stage_cls
+
+    else:
+        raise ValueError('root_only can only be applied to functions, Pipeline, or Stage subclasses.')
 
 
 @contextmanager
-def root_first():
+def root_first(group: dist.ProcessGroup = None):
     """
     Context manager that ensures that the root rank executes the code first before all other ranks.
 
     This is realized by inserting a barrier before or after the code block depending on the rank.
+    Notice, that only a regular barrier is used, and, hence, the default timeout of 1800000 seconds applies for nccl.
+
+    Args:
+        group (ProcessGroup, optional): The process group to work on. If None (default), the default process group will be used.
     """
     if is_root():
         try:
             yield
         finally:
-            dist.barrier()
+            dist.barrier(group)
     else:
-        dist.barrier()
+        dist.barrier(group)
         try:
             yield
         finally:
