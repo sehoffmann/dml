@@ -13,26 +13,35 @@ release = 'v0.3.3'
 
 # -- General configuration ---------------------------------------------------
 extensions = [
-    'sphinx.ext.duration',
     'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',
     'sphinx.ext.napoleon',
+    'sphinx_autodoc_typehints',
+    'sphinx.ext.duration',
+    'sphinx.ext.autosummary',
     'sphinx.ext.coverage',
+    'sphinx.ext.intersphinx',
 ]
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 
+# -- autodoc -----------------------------------------------------------------
+# autodoc_typehints = "description"
+
+# -- Napoleon ----------------------------------------------------------------
+# napoleon_use_param = False
+# napoleon_use_rtype = False
+# napoleon_preprocess_types = True
+
+# -- External documentation (intersphinx) ------------------------------------
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'torch': ('https://pytorch.org/docs/stable/', None),
+}
+
+
 # -- Options for HTML output -------------------------------------------------
 html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 html_logo = '../misc/logo/dmlcloud_light.png'
-
-
-# Napoleon configs
-napoleon_google_docstring = True
-napoleon_numpy_docstring = False
-napoleon_use_param = False
-napoleon_use_rtype = False
-napoleon_preprocess_types = True
