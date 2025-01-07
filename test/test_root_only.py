@@ -121,15 +121,16 @@ class TestRootOnly:
         assert return_root_rank.__name__ == 'return_root_rank'
         assert return_root_rank.__doc__ == 'TEST_DOC_STRING'
 
-    def test_stage(self, distributed_environment):
-        def run():
-            stage = RootOnlyStage(epochs=1)
-            pipe = dml.Pipeline()
-            pipe.append(stage)
-            pipe.run()
-            return stage.cb_executed
+    @staticmethod
+    def _test_stage_run():
+        stage = RootOnlyStage(epochs=1)
+        pipe = dml.Pipeline()
+        pipe.append(stage)
+        pipe.run()
+        return stage.cb_executed
 
-        results = distributed_environment(3).start(run)
+    def test_stage(self, distributed_environment):
+        results = distributed_environment(3).start(TestRootOnly._test_stage_run)
 
         assert [r['pre_stage'] for r in results] == [True, False, False]
         assert [r['post_stage'] for r in results] == [True, False, False]
@@ -155,15 +156,16 @@ class TestRootOnly:
         assert RootOnlyStage.run_epoch.__name__ == 'run_epoch'
         assert RootOnlyStage.run_epoch.__doc__ == 'TEST_DOC_STRING'
 
-    def test_partial_stage(self, distributed_environment):
-        def run():
-            stage = PartialRootOnlyStage(epochs=1)
-            pipe = dml.Pipeline()
-            pipe.append(stage)
-            pipe.run()
-            return stage.cb_executed
+    @staticmethod
+    def _test_partial_stage_run():
+        stage = PartialRootOnlyStage(epochs=1)
+        pipe = dml.Pipeline()
+        pipe.append(stage)
+        pipe.run()
+        return stage.cb_executed
 
-        results = distributed_environment(3).start(run)
+    def test_partial_stage(self, distributed_environment):
+        results = distributed_environment(3).start(TestRootOnly._test_partial_stage_run)
 
         assert [r['pre_stage'] for r in results] == [True, True, True]
         assert [r['post_stage'] for r in results] == [True, False, False]
@@ -177,14 +179,15 @@ class TestRootOnly:
         assert PartialRootOnlyStage.pre_epoch.__name__ == 'pre_epoch'
         assert PartialRootOnlyStage.pre_epoch.__doc__ == 'TEST_DOC_STRING'
 
-    def test_pipeline(self, distributed_environment):
-        def run():
-            pipe = RootOnlyPipeline()
-            pipe.append(RootOnlyStage(epochs=1))
-            pipe.run()
-            return pipe.cb_executed
+    @staticmethod
+    def _test_pipeline_run():
+        pipe = RootOnlyPipeline()
+        pipe.append(RootOnlyStage(epochs=1))
+        pipe.run()
+        return pipe.cb_executed
 
-        results = distributed_environment(3).start(run)
+    def test_pipeline(self, distributed_environment):
+        results = distributed_environment(3).start(TestRootOnly._test_pipeline_run)
 
         assert [r['pre_run'] for r in results] == [True, False, False]
         assert [r['post_run'] for r in results] == [True, False, False]
@@ -198,14 +201,15 @@ class TestRootOnly:
         assert RootOnlyPipeline.post_run.__name__ == 'post_run'
         assert RootOnlyPipeline.post_run.__doc__ == 'TEST_DOC_STRING'
 
-    def test_partial_pipeline(self, distributed_environment):
-        def run():
-            pipe = PartialRootOnlyPipeline()
-            pipe.append(RootOnlyStage(epochs=1))
-            pipe.run()
-            return pipe.cb_executed
+    @staticmethod
+    def _test_partial_pipeline_run():
+        pipe = PartialRootOnlyPipeline()
+        pipe.append(RootOnlyStage(epochs=1))
+        pipe.run()
+        return pipe.cb_executed
 
-        results = distributed_environment(3).start(run)
+    def test_partial_pipeline(self, distributed_environment):
+        results = distributed_environment(3).start(TestRootOnly._test_partial_pipeline_run)
 
         assert [r['pre_run'] for r in results] == [True, False, False]
         assert [r['post_run'] for r in results] == [True, True, True]

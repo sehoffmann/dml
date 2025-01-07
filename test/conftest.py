@@ -1,4 +1,4 @@
-from multiprocessing import Pipe, Process
+import multiprocessing as mp
 
 import pytest
 import torch
@@ -21,15 +21,10 @@ class DistributedEnvironment:
 
         return init
 
-    def __init__(self, world_size: int, timeout: int = 5 * 60, daemon: bool = True, file: str = None):
-        self.world_size = world_size
-        self.timeout = timeout
-        self.daemon = daemon
-        self.file = str(file)
-
-    def _run(self, rank, conn, func, *args, **kwargs):
-        store = torch.distributed.FileStore(self.file, self.world_size)
-        torch.distributed.init_process_group(backend='gloo', world_size=self.world_size, rank=rank, store=store)
+    @staticmethod  # important to be staticmethod, otherwise pickle will fail
+    def _run(rank, world_size, file, conn, func, *args, **kwargs):
+        store = torch.distributed.FileStore(file, world_size)
+        torch.distributed.init_process_group(backend='gloo', world_size=world_size, rank=rank, store=store)
 
         torch.distributed.barrier()
         ret = func(*args, **kwargs)  # TODO: need to handle exceptions
@@ -39,14 +34,24 @@ class DistributedEnvironment:
 
         torch.distributed.destroy_process_group()
 
+    def __init__(self, world_size: int, timeout: int = 5 * 60, daemon: bool = True, file: str = None):
+        self.world_size = world_size
+        self.timeout = timeout
+        self.daemon = daemon
+        self.file = str(file)
+
     def start(self, func, *args, **kwargs):
+        ctx = mp.get_context('spawn')
+
         self.processes = []
         self.conns = []
         for rank in range(self.world_size):
-            recv_conn, send_conn = Pipe()
-            process_args = (rank, send_conn, func) + args
+            recv_conn, send_conn = ctx.Pipe()
+            process_args = (rank, self.world_size, self.file, send_conn, func) + args
             process_kwargs = dict(kwargs)
-            process = Process(target=self._run, args=process_args, kwargs=process_kwargs, daemon=self.daemon)
+            process = ctx.Process(
+                target=DistributedEnvironment._run, args=process_args, kwargs=process_kwargs, daemon=self.daemon
+            )
             self.conns.append(recv_conn)
             self.processes.append(process)
 
