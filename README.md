@@ -26,6 +26,10 @@ Alternatively, you can install the latest development version directly from Gith
 pip install git+https://github.com/sehoffmann/dmlcloud.git
 ```
 
+### Documentation
+
+You can find the official documentation at [Read the Docs](https://dmlcloud.readthedocs.io/en/latest/)
+
 ## Minimal Example
 See [examples/mnist.py](https://github.com/sehoffmann/dmlcloud/blob/develop/examples/mnist.py) for a minimal example on how to train MNIST with multiple GPUS. To run it with 4 GPUs, use
 ```bash
@@ -47,6 +51,14 @@ dmlrun -n 4 python examples/mnist.py
 srun python examples/mnist.py
 ```
 
-## Documentation
+## FAQ
 
-You can find the official documentation at [Read the Docs](https://dmlcloud.readthedocs.io/en/latest/)
+### How is dmlcloud different from similar libraries like *pytorch lightning* or *fastai*?
+
+dmlcloud was designed foremost with one underlying principle:
+> **No unnecessary abstractions, just help with distributed training**
+
+As a consequence, dmlcloud code is almost identical to a regular pytorch training loop and only requires a few adjustments here and there.
+In contrast, other libraries often introduce extensive API's that can quickly feel overwhelming due to their sheer amount of options.
+
+For instance, **the constructor of `ligthning.Trainer` has 51 arguments! `dml.Pipeline` only has 2.**
