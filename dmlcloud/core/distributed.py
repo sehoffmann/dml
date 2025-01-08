@@ -1,11 +1,13 @@
 import inspect
 import os
+import random
 import sys
 from contextlib import contextmanager
 from datetime import timedelta
 from functools import wraps
 from typing import Callable, TYPE_CHECKING
 
+import numpy as np
 import torch
 import torch.distributed
 import torch.distributed as dist
@@ -34,6 +36,7 @@ __all__ = [
     'broadcast_object',
     'init',
     'deinitialize_torch_distributed',
+    'seed',
 ]
 
 
@@ -557,3 +560,47 @@ def deinitialize_torch_distributed():
     _WorkerInfo.LOCAL_WORLD_SIZE = None
     _WorkerInfo.NODE_ID = None
     dist.destroy_process_group()
+
+
+def seed(seed: int | None = None, group: dist.ProcessGroup = None) -> int:
+    """
+    Share's the seed from the root rank to all ranks in the group and seeds the random number generators.
+
+    The following libraries are seeded:
+    - random
+    - numpy
+    - torch
+    - tensorflow (if installed and imported)
+
+    Different ranks will be seeded differently, so that they do not generate the same random numbers.
+
+    Args:
+        seed: The seed to share. If None, a random seed is generated. Default is None.
+                Value must be within the inclusive range `[-0x8000_0000_0000_0000, 0xffff_ffff_ffff_ffff]`.
+                Negative inputs are remapped to positive values with the formula `0xffff_ffff_ffff_ffff + seed`.
+        group: The process group to work on. If None, the default process group will be used. Default is None.
+
+    Returns:
+        The original seed that was provided the root rank. 64-bit integer.
+
+    Raises:
+        RuntimeError: If ``seed`` is not within the inclusive range `[-0x8000_0000_0000_0000, 0xffff_ffff_ffff_ffff]`.
+    """
+    if seed is None:
+        seed = torch.seed()
+    seed = broadcast_object(seed, group=group)
+
+    worker_seed = seed + rank()
+    torch.manual_seed(worker_seed)
+    random.seed(worker_seed)
+
+    # numpy only supports 32bits, so we use torch to generate a 32bit seed
+    np_seed = torch.randint(0, 2**31, (1,)).item()
+    np.random.seed(np_seed)
+
+    if 'tensorflow' in sys.modules:
+        import tensorflow as tf
+
+        tf.random.set_seed(worker_seed)
+
+    return seed

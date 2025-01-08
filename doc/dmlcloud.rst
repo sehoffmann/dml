@@ -23,6 +23,8 @@ dmlcloud provides a set of helper functions to simplify the use of torch.distrib
    :toctree: generated
 
     init
+    seed
+    deinitialize_torch_distributed
 
     is_root
     root_only

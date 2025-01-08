@@ -1,3 +1,5 @@
+import argparse
+
 import dmlcloud as dml
 import torch
 import torchmetrics
@@ -96,8 +98,21 @@ class MNISTStage(dml.Stage):
 
 
 def main():
-    pipe = dml.Pipeline(name='MNIST')
-    pipe.append(MNISTStage(epochs=3))
+    dml.init()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--epochs', type=int, default=4)
+    parser.add_argument('--seed', type=int)
+    args = parser.parse_args()
+
+    seed = dml.seed(args.seed)  # This is a helper function to set the seed for all devices
+    config = {
+        'seed': seed,
+        'epochs': args.epochs,
+    }
+
+    pipe = dml.Pipeline(config, name='MNIST')
+    pipe.append(MNISTStage(epochs=args.epochs))
     pipe.enable_checkpointing('checkpoints')
     pipe.enable_wandb()
     pipe.run()
