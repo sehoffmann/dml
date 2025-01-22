@@ -34,7 +34,8 @@ __all__ = [
     'ReduceMetricsCallback',
     'CheckpointCallback',
     'CsvCallback',
-    'WandbCallback',
+    'WandbInitCallback',
+    'WandbLoggerCallback',
     'TensorboardCallback',
     'CudaCallback',
 ]
@@ -91,7 +92,7 @@ class CbPriority(IntEnum):
     Default priorities for callbacks used by the pipeline and stage classes.
     """
 
-    WANDB = -200
+    WANDB_INIT = -200
     CHECKPOINT = -190
     STAGE_TIMER = -180
     DIAGNOSTICS = -170
@@ -101,6 +102,7 @@ class CbPriority(IntEnum):
 
     OBJECT_METHODS = 0
 
+    WANDB_LOGGER = 110
     CSV = 110
     TENSORBOARD = 110
     TABLE = 120
@@ -390,16 +392,17 @@ class CsvCallback(Callback):
             writer.writerow(row)
 
 
-class WandbCallback(Callback):
+class WandbInitCallback(Callback):
     """
-    A callback that logs metrics to Weights & Biases.
+    A callback that initializes Weights & Biases and closes it at the end.
+    This is separated from the WandbLoggerCallback to ensure it is called right at the beginning of training.
     """
 
     def __init__(self, project, entity, group, tags, startup_timeout, **kwargs):
         try:
             import wandb
         except ImportError:
-            raise ImportError('wandb is required for the WandbCallback')
+            raise ImportError('wandb is required for the WandbInitCallback')
 
         self.wandb = wandb
         self.project = project
@@ -421,13 +424,27 @@ class WandbCallback(Callback):
             **self.kwargs,
         )
 
-    def post_epoch(self, stage: 'Stage'):
-        metrics = stage.history.last()
-        self.wandb.log(metrics)
-
     def cleanup(self, pipe, exc_type, exc_value, traceback):
         if wandb_is_initialized():
             self.wandb.finish(exit_code=0 if exc_type is None else 1)
+
+
+class WandbLoggerCallback(Callback):
+    """
+    A callback that logs metrics to Weights & Biases.
+    """
+
+    def __init__(self):
+        try:
+            import wandb
+        except ImportError:
+            raise ImportError('wandb is required for the WandbLoggerCallback')
+
+        self.wandb = wandb
+
+    def post_epoch(self, stage: 'Stage'):
+        metrics = stage.history.last()
+        self.wandb.log(metrics, commit=True, step=stage.current_epoch)
 
 
 class TensorboardCallback(Callback):

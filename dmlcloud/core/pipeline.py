@@ -18,7 +18,8 @@ from .callbacks import (
     DiagnosticsCallback,
     GitDiffCallback,
     TensorboardCallback,
-    WandbCallback,
+    WandbInitCallback,
+    WandbLoggerCallback,
 )
 from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
 from .distributed import broadcast_object, init, is_root, local_rank
@@ -197,7 +198,7 @@ class Pipeline:
         import wandb  # import now to avoid potential long import times later on  # noqa
 
         if is_root():
-            callback = WandbCallback(
+            init_callback = WandbInitCallback(
                 project=project,
                 entity=entity,
                 group=group,
@@ -205,7 +206,8 @@ class Pipeline:
                 startup_timeout=startup_timeout,
                 **kwargs,
             )
-            self.add_callback(callback, CbPriority.WANDB)
+            self.add_callback(init_callback, CbPriority.WANDB_INIT)
+            self.add_callback(WandbLoggerCallback(), CbPriority.WANDB_LOGGER)
 
         self.wandb = True
 
