@@ -245,7 +245,8 @@ class TableCallback(Callback):
         if formatter and not metric:
             raise ValueError('Cannot provide a formatter without a metric name')
 
-        self.get_table(stage).add_column(name, width=width, color=color, alignment=alignment)
+        table = self.get_table(stage)
+        table.add_column(name, width=width, color=color, alignment=alignment)
 
         if metric:
             self.tracked_metrics[name] = metric
@@ -255,27 +256,32 @@ class TableCallback(Callback):
         self.get_table(stage)  # Ensure the table has been created at this point
 
     def post_stage(self, stage: 'Stage'):
-        self.get_table(stage).close()
+        table = self.get_table(stage)
+        table.close()
 
     def pre_epoch(self, stage: 'Stage'):
+        table = self.get_table(stage)
         if 'Epoch' in self.get_table(stage).column_names:
-            self.get_table(stage)['Epoch'] = stage.current_epoch
+            table['Epoch'] = stage.current_epoch
 
     def post_epoch(self, stage: 'Stage'):
+        table = self.get_table(stage)
         metrics = stage.history.last()
 
         for column_name, metric_name in self.tracked_metrics.items():
-            if column_name not in self.get_table(stage).column_names:
+            if column_name not in table.column_names:  # When does this happen?
                 continue
 
-            value = metrics[metric_name]
-            formatter = self.formatters[column_name]
-            if formatter is not None:
-                value = formatter(value)
+            if metric_name in metrics:
+                value = metrics[metric_name]
+                formatter = self.formatters[column_name]
+                if formatter is not None:
+                    value = formatter(value)
+                table.update(column_name, value)
+            else:
+                pass  # don't update -> empty cell
 
-            self.get_table(stage).update(column_name, value)
-
-        self.get_table(stage).next_row()
+        table.next_row()
 
 
 class ReduceMetricsCallback(Callback):
