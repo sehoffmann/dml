@@ -19,6 +19,11 @@ class IORedirector:
     Data is written to the file and the original streams.
     """
 
+    # Caveats:
+    #  * We always need to forward the current stdout/stderr. People can change them.
+    #  * Even after uninstall, people can still hold reference to the redirected streams.
+    #    Hence, we must be fault tolorant and not crash if the file is closed or the streams are changed.
+
     class Stdout:
         def __init__(self, parent):
             self.parent = parent
@@ -26,12 +31,20 @@ class IORedirector:
         def write(self, data):
             if self.parent.file is not None:
                 self.parent.file.write(data)
-            self.parent.stdout.write(data)
+
+            if sys.stdout is self:  # Avoid infinite recursion
+                self.parent._org_stdout.write(data)
+            else:
+                sys.stdout.write(data)
 
         def flush(self):
             if self.parent.file is not None:
                 self.parent.file.flush()
-            self.parent.stdout.flush()
+
+            if sys.stdout is self:  # Avoid infinite recursion
+                self.parent._org_stdout.flush()
+            else:
+                sys.stdout.flush()
 
     class Stderr:
         def __init__(self, parent):
@@ -40,28 +53,36 @@ class IORedirector:
         def write(self, data):
             if self.parent.file is not None:
                 self.parent.file.write(data)
-            self.parent.stderr.write(data)
+
+            if sys.stderr is self:  # Avoid infinite recursion
+                self.parent._org_stderr.write(data)
+            else:
+                sys.stderr.write(data)
 
         def flush(self):
             if self.parent.file is not None:
                 self.parent.file.flush()
-            self.parent.stderr.flush()
+
+            if sys.stderr is self:  # Avoid infinite recursion
+                self.parent._org_stderr.flush()
+            else:
+                sys.stderr.flush()
 
     def __init__(self, log_file: Path):
         self.path = log_file
         self.file = None
-        self.stdout = None
-        self.stderr = None
+        self._org_stdout = None
+        self._org_stderr = None
 
     def install(self):
         if self.file is not None:
             return
 
         self.file = self.path.open('a', encoding='utf-8', errors='replace')
-        self.stdout = sys.stdout
-        self.stderr = sys.stderr
-        self.stdout.flush()
-        self.stderr.flush()
+        self._org_stdout = sys.stdout
+        self._org_stderr = sys.stderr
+        self._org_stdout.flush()
+        self._org_stderr.flush()
 
         sys.stdout = self.Stdout(self)
         sys.stderr = self.Stderr(self)
@@ -70,16 +91,13 @@ class IORedirector:
         if self.file is None:
             raise ValueError('IORedirector is not installed')
 
-        self.stdout.flush()
-        self.stderr.flush()
+        sys.stdout = self._org_stdout
+        sys.stderr = self._org_stderr
 
-        sys.stdout = self.stdout
-        sys.stderr = self.stderr
-
-        self.file.close()
         self.file = None
-        self.stdout = None
-        self.stderr = None
+        self._org_stdout = None
+        self._org_stderr = None
+        self.file.close()
 
     def __enter__(self):
         self.install()
