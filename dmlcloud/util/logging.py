@@ -94,10 +94,12 @@ class IORedirector:
         sys.stdout = self._org_stdout
         sys.stderr = self._org_stderr
 
-        self.file = None
+        file = self.file
+        self.file = None  # Prevent further writes
+        file.close()
+
         self._org_stdout = None
         self._org_stderr = None
-        self.file.close()
 
     def __enter__(self):
         self.install()
