@@ -1,7 +1,7 @@
 name: Setup CI Environment
 inputs:
   python-version:
-    default: "3.10"
+    default: "3.11"
     type: string
 
 runs:

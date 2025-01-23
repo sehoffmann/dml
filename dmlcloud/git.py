@@ -74,7 +74,7 @@ def script_directory() -> Path | None:
         return file.parent
 
 
-def project_dir() -> Path | None:
+def project_directory() -> Path | None:
     """
     Returns the top-level directory containing the script or module that was executed.
 
@@ -99,7 +99,7 @@ def run_in_project(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwar
     Raises:
         RuntimeError: If the project directory could not be determined.
     """
-    cwd = project_dir()
+    cwd = project_directory()
     if cwd is None:
         raise RuntimeError('Could not determine project directory')
     return subprocess.run(cmd, cwd=cwd, stdout=stdout, stderr=stderr, **kwargs)

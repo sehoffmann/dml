@@ -120,12 +120,12 @@ class DevNullIO(io.TextIOBase):
 
 def experiment_header(
     name: str | None,
-    checkpoint_dir: str | None,
+    run_dir: str | None,
     date: datetime,
 ) -> str:
     msg = f'...............  Experiment: {name if name else "N/A"}  ...............\n'
     msg += f'- Date: {date}\n'
-    msg += f'- Checkpoint Dir: {checkpoint_dir if checkpoint_dir else "N/A"}\n'
+    msg += f'- Checkpoint Dir: {run_dir if run_dir else "N/A"}\n'
     msg += f'- Training on {dist.get_world_size()} GPUs\n'
     return msg
 

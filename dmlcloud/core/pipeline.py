@@ -1,6 +1,7 @@
 import warnings
 from datetime import datetime, timedelta
 from functools import cached_property
+from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 import torch
@@ -21,7 +22,7 @@ from .callbacks import (
     WandbInitCallback,
     WandbLoggerCallback,
 )
-from .checkpoint import CheckpointDir, find_slurm_checkpoint, generate_checkpoint_path
+from .checkpoint import find_slurm_checkpoint, generate_checkpoint_path, is_valid_checkpoint_dir
 from .distributed import broadcast_object, init, is_root, local_rank
 from .stage import Stage
 
@@ -105,13 +106,13 @@ class Pipeline:
 
         self.name = name
 
-        self.checkpoint_dir = None
+        self.run_dir: Path | None = None
         self.resumed = None
         self.start_time = None
         self.stop_time = None
         self.current_stage = None
 
-        self.wandb = False
+        self._wandb = False
 
         self.stages = []
         self.callbacks = CallbackList()
@@ -119,6 +120,8 @@ class Pipeline:
         self.add_callback(DiagnosticsCallback(), CbPriority.DIAGNOSTICS)
         self.add_callback(GitDiffCallback(), CbPriority.GIT)
         self.add_callback(_ForwardCallback(), CbPriority.OBJECT_METHODS)  # methods have priority 0
+        if self.device.type == 'cuda':
+            self.add_callback(CudaCallback(), CbPriority.CUDA)
 
         if dist.is_gloo_available():
             self.gloo_group = dist.new_group(backend='gloo')
@@ -126,8 +129,16 @@ class Pipeline:
             warnings.warn('Gloo backend not available. Barriers will not use custom timeouts.')
 
     @property
-    def checkpointing_enabled(self):
-        return self.checkpoint_dir is not None
+    def has_checkpointing(self):
+        return self.run_dir is not None
+
+    @property
+    def has_wandb(self):
+        return self._wandb
+
+    @property
+    def has_tensorboard(self):
+        return self.has_checkpointing
 
     def add_callback(self, callback: Callback, priority: int = 1):
         """
@@ -157,31 +168,25 @@ class Pipeline:
         root: str,
         resume: bool = False,
     ):
-        if self.checkpointing_enabled:
+        if self.has_checkpointing:
             raise ValueError('Checkpointing already enabled')
 
-        path = None
-        if resume and CheckpointDir(root).is_valid:
-            path = root
+        if resume and is_valid_checkpoint_dir(root):
+            self.run_dir = root
             self.resumed = True
         elif resume and find_slurm_checkpoint(root):
-            path = find_slurm_checkpoint(root)
+            self.run_dir = find_slurm_checkpoint(root)
             self.resumed = True
 
-        if path is None:  # no need for a barrier here, dir creation happens in _pre_run()
+        if self.run_dir is None:  # no need for a barrier here, dir creation happens in _pre_run()
             path = generate_checkpoint_path(root=root, name=self.name, creation_time=self.start_time)
-            path = broadcast_object(path)
+            self.run_dir = broadcast_object(path)
             self.resumed = False
 
-        self.checkpoint_dir = CheckpointDir(path)
-
         if is_root():
-            self.add_callback(CheckpointCallback(self.checkpoint_dir.path), CbPriority.CHECKPOINT)
-            self.add_callback(CsvCallback(self.checkpoint_dir.path, append_stage_name=True), CbPriority.CSV)
-            self.add_callback(TensorboardCallback(self.checkpoint_dir.path), CbPriority.TENSORBOARD)
-
-        if self.device.type == 'cuda':
-            self.add_callback(CudaCallback(), CbPriority.CUDA)
+            self.add_callback(CheckpointCallback(self.run_dir), CbPriority.CHECKPOINT)
+            self.add_callback(CsvCallback(self.run_dir, append_stage_name=True), CbPriority.CSV)
+            self.add_callback(TensorboardCallback(self.run_dir), CbPriority.TENSORBOARD)
 
     def enable_wandb(
         self,
@@ -192,7 +197,7 @@ class Pipeline:
         startup_timeout: int = 360,
         **kwargs,
     ):
-        if self.wandb:
+        if self._wandb:
             raise ValueError('Wandb already enabled')
 
         import wandb  # import now to avoid potential long import times later on  # noqa
@@ -209,7 +214,7 @@ class Pipeline:
             self.add_callback(init_callback, CbPriority.WANDB_INIT)
             self.add_callback(WandbLoggerCallback(), CbPriority.WANDB_LOGGER)
 
-        self.wandb = True
+        self._wandb = True
 
     def barrier(self, timeout=None):
         if self.gloo_group is None:
@@ -269,7 +274,7 @@ class Pipeline:
             callback.pre_run(self)
 
     def _resume_run(self):
-        dml_logging.info(f'Resuming training from checkpoint: {self.checkpoint_dir}')
+        dml_logging.info(f'Resuming training from checkpoint: {self.run_dir}')
         self.resume_run()
 
     def _post_run(self):

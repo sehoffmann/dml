@@ -15,7 +15,7 @@ from progress_table import ProgressTable
 from ..git import git_diff
 from ..util.logging import DevNullIO, experiment_header, general_diagnostics, IORedirector
 from ..util.wandb import wandb_is_initialized, wandb_set_startup_timeout
-from . import logging as dml_logging
+from . import checkpoint as dml_checkpoint, logging as dml_logging
 from .distributed import all_gather_object, is_root
 
 
@@ -302,27 +302,27 @@ class CheckpointCallback(Callback):
     Creates the checkpoint directory and optionally setups io redirection.
     """
 
-    def __init__(self, root_path: Union[str, Path], redirect_io: bool = True):
+    def __init__(self, run_dir: Union[str, Path], redirect_io: bool = True):
         """
-        Initialize the callback with the given root path.
+        Initialize the callback with the given path.
 
         Args:
-            root_path (Union[str, Path]): The root path where the checkpoint directory will be created.
-            redirect_io (bool, optional): Whether to redirect the IO to a file. Defaults to True.
+            run_dir: The path to the checkpoint directory.
+            redirect_io: Whether to redirect the IO to a file. Defaults to True.
         """
-        self.root_path = Path(root_path)
+        self.run_dir = Path(run_dir)
         self.redirect_io = redirect_io
         self.io_redirector = None
 
     def pre_run(self, pipe: 'Pipeline'):
-        if not pipe.checkpoint_dir.is_valid:
-            pipe.checkpoint_dir.create()
-            pipe.checkpoint_dir.save_config(pipe.config)
+        if not dml_checkpoint.is_valid_checkpoint_dir(self.run_dir):
+            dml_checkpoint.create_checkpoint_dir(self.run_dir)
+            dml_checkpoint.save_config(pipe.config, self.run_dir)
 
-        self.io_redirector = IORedirector(pipe.checkpoint_dir.log_file)
+        self.io_redirector = IORedirector(pipe.run_dir / 'log.txt')
         self.io_redirector.install()
 
-        with open(pipe.checkpoint_dir.path / "environment.txt", 'w') as f:
+        with open(pipe.run_dir / "environment.txt", 'w') as f:
             for k, v in os.environ.items():
                 f.write(f"{k}={v}\n")
 
@@ -479,7 +479,7 @@ class DiagnosticsCallback(Callback):
     """
 
     def pre_run(self, pipe):
-        header = '\n' + experiment_header(pipe.name, pipe.checkpoint_dir, pipe.start_time)
+        header = '\n' + experiment_header(pipe.name, pipe.run_dir, pipe.start_time)
         dml_logging.info(header)
 
         diagnostics = general_diagnostics()
@@ -495,8 +495,8 @@ class DiagnosticsCallback(Callback):
 
     def post_run(self, pipe):
         dml_logging.info(f'Finished training in {pipe.stop_time - pipe.start_time} ({pipe.stop_time})')
-        if pipe.checkpointing_enabled:
-            dml_logging.info(f'Outputs have been saved to {pipe.checkpoint_dir}')
+        if pipe.has_checkpointing:
+            dml_logging.info(f'Outputs have been saved to {pipe.run_dir}')
 
 
 class GitDiffCallback(Callback):
@@ -509,8 +509,8 @@ class GitDiffCallback(Callback):
         if diff is None:
             return
 
-        if pipe.checkpointing_enabled and is_root():
-            self._save(pipe.checkpoint_dir.path / 'git_diff.txt', diff)
+        if pipe.has_checkpointing and is_root():
+            self._save(pipe.run_dir / 'git_diff.txt', diff)
 
         msg = '* GIT-DIFF:\n'
         msg += '\n'.join('    ' + line for line in diff.splitlines())
@@ -558,8 +558,8 @@ class CudaCallback(Callback):
         msg += '\n'.join(f'    - [{i}] {info_str}' for i, info_str in enumerate(info_strings))
         dml_logging.info(msg)
 
-        if pipe.checkpointing_enabled and is_root():
-            self._save(pipe.checkpoint_dir.path / 'cuda_devices.json', all_devices)
+        if pipe.has_checkpointing and is_root():
+            self._save(pipe.run_dir / 'cuda_devices.json', all_devices)
 
     def _save(self, path, all_devices):
         with open(path, 'w') as f:

@@ -12,6 +12,6 @@ dmlcloud.git
       git_hash
       is_setuptools_cli_script
       script_path
-      script_dir
-      project_dir
+      script_directory
+      project_directory
       run_in_project

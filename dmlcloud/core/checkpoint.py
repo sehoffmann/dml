@@ -1,5 +1,4 @@
 import datetime
-import logging
 import secrets
 from pathlib import Path
 from typing import Optional
@@ -7,6 +6,17 @@ from typing import Optional
 from omegaconf import OmegaConf
 
 from dmlcloud.slurm import slurm_job_id
+
+
+__all__ = [
+    'generate_checkpoint_path',
+    'is_valid_checkpoint_dir',
+    'create_checkpoint_dir',
+    'find_slurm_checkpoint',
+    'read_slurm_id',
+    'save_config',
+    'read_config',
+]
 
 
 def sanitize_filename(filename: str) -> str:
@@ -34,6 +44,36 @@ def generate_checkpoint_path(
     return root / f'{name}-{dt}-{generate_id()}'
 
 
+def is_valid_checkpoint_dir(path: Path) -> bool:
+    if not path.exists() or not path.is_dir():
+        return False
+
+    if not (path / '.dmlcloud').exists():
+        return False
+
+    return True
+
+
+def create_checkpoint_dir(path: Path | str, name: Optional[str] = None) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / '.dmlcloud').touch()
+    (path / 'log.txt').touch()
+    if slurm_job_id() is not None:
+        with open(path / '.slurm-jobid', 'w') as f:
+            f.write(slurm_job_id())
+
+
+def read_slurm_id(path: Path) -> Optional[str]:
+    if is_valid_checkpoint_dir(path):
+        return None
+
+    if not (path / '.slurm-jobid').exists():
+        return None
+
+    with open(path / '.slurm-jobid') as f:
+        return f.read()
+
+
 def find_slurm_checkpoint(root: Path | str) -> Optional[Path]:
     root = Path(root)
 
@@ -42,82 +82,17 @@ def find_slurm_checkpoint(root: Path | str) -> Optional[Path]:
         return None
 
     for child in root.iterdir():
-        if CheckpointDir(child).is_valid and CheckpointDir(child).slurm_job_id == job_id:
+        if read_slurm_id(child) == job_id:
             return child
 
     return None
 
 
-class CheckpointDir:
-    def __init__(self, path: Path):
-        self.path = Path(path).resolve()
-        self.logger = logging.getLogger('dmlcloud')
+def save_config(config: OmegaConf, run_dir: Path):
+    with open(run_dir / 'config.yaml', 'w') as f:
+        OmegaConf.save(config, f)
 
-    @property
-    def config_file(self) -> Path:
-        return self.path / 'config.yaml'
 
-    @property
-    def indicator_file(self) -> Path:
-        return self.path / '.dmlcloud'
-
-    @property
-    def log_file(self) -> Path:
-        return self.path / 'log.txt'
-
-    @property
-    def slurm_file(self) -> Path:
-        return self.path / '.slurm-jobid'
-
-    @property
-    def exists(self) -> bool:
-        return self.path.exists()
-
-    @property
-    def is_valid(self) -> bool:
-        if not self.exists or not self.path.is_dir():
-            return False
-
-        if not self.indicator_file.exists():
-            return False
-
-        return True
-
-    @property
-    def slurm_job_id(self) -> Optional[str]:
-        if not self.slurm_file.exists():
-            return None
-
-        with open(self.slurm_file) as f:
-            return f.read()
-
-    def create(self):
-        if self.exists:
-            raise ValueError(f'Checkpoint directory already exists: {self.path}')
-
-        self.path.mkdir(parents=True, exist_ok=True)
-        self.indicator_file.touch()
-        self.log_file.touch()
-        if slurm_job_id() is not None:
-            with open(self.slurm_file, 'w') as f:
-                f.write(slurm_job_id())
-
-    def save_config(self, config: OmegaConf):
-        if not self.exists:
-            raise ValueError(f'Checkpoint directory does not exist: {self.path}')
-
-        with open(self.config_file, 'w') as f:
-            OmegaConf.save(config, f)
-
-    def load_config(self) -> OmegaConf:
-        if not self.is_valid:
-            raise ValueError(f'Checkpoint directory is not valid: {self.path}')
-
-        with open(self.config_file) as f:
-            return OmegaConf.load(f)
-
-    def __str__(self) -> str:
-        return str(self.path)
-
-    def __repr__(self) -> str:
-        return f'CheckpointDir({self.path})'
+def read_config(run_dir: Path) -> OmegaConf:
+    with open(run_dir / 'config.yaml') as f:
+        return OmegaConf.load(f)

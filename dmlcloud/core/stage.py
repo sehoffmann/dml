@@ -60,11 +60,24 @@ class Stage:
 
     @property
     def device(self):
+        """
+        Same as :attr:`Pipeline.device`.
+        """
         return self.pipe.device
 
     @property
     def config(self):
+        """
+        Same as :attr:`Pipeline.config`.
+        """
         return self.pipe.config
+
+    @property
+    def run_dir(self):
+        """
+        Same as :attr:`Pipeline.run_dir`.
+        """
+        return self.pipe.run_dir
 
     @property
     def current_epoch(self):

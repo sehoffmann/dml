@@ -63,7 +63,6 @@ class CustomEpochStage(dml.Stage):
                     self.log('misc/steps', num_steps)
                     if num_steps < MAX_STEPS:
                         self.next_epoch()
-                        self.train_sampler.set_epoch(self.current_epoch)
                     else:
                         break
 
