@@ -24,11 +24,13 @@ class IORedirector:
             self.parent = parent
 
         def write(self, data):
-            self.parent.file.write(data)
+            if self.parent.file is not None:
+                self.parent.file.write(data)
             self.parent.stdout.write(data)
 
         def flush(self):
-            self.parent.file.flush()
+            if self.parent.file is not None:
+                self.parent.file.flush()
             self.parent.stdout.flush()
 
     class Stderr:
@@ -36,11 +38,13 @@ class IORedirector:
             self.parent = parent
 
         def write(self, data):
-            self.parent.file.write(data)
+            if self.parent.file is not None:
+                self.parent.file.write(data)
             self.parent.stderr.write(data)
 
         def flush(self):
-            self.parent.file.flush()
+            if self.parent.file is not None:
+                self.parent.file.flush()
             self.parent.stderr.flush()
 
     def __init__(self, log_file: Path):
@@ -53,7 +57,7 @@ class IORedirector:
         if self.file is not None:
             return
 
-        self.file = self.path.open('a')
+        self.file = self.path.open('a', encoding='utf-8', errors='replace')
         self.stdout = sys.stdout
         self.stderr = sys.stderr
         self.stdout.flush()
@@ -63,6 +67,9 @@ class IORedirector:
         sys.stderr = self.Stderr(self)
 
     def uninstall(self):
+        if self.file is None:
+            raise ValueError('IORedirector is not installed')
+
         self.stdout.flush()
         self.stderr.flush()
 
@@ -70,6 +77,9 @@ class IORedirector:
         sys.stderr = self.stderr
 
         self.file.close()
+        self.file = None
+        self.stdout = None
+        self.stderr = None
 
     def __enter__(self):
         self.install()
