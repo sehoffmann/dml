@@ -1,12 +1,10 @@
 import sys
 
 import pytest
-
 from dmlcloud.util.logging import IORedirector
 
 
 class DummyStream:
-
     def __init__(self, stdout=True):
         self.data = ''
         self.is_stdout = stdout
@@ -21,7 +19,7 @@ class DummyStream:
         self._org_stream = getattr(sys, 'stdout' if self.is_stdout else 'stderr')
         setattr(sys, 'stdout' if self.is_stdout else 'stderr', self)
         return self
-    
+
     def __exit__(self, exc_type, exc_value, traceback):
         setattr(sys, 'stdout' if self.is_stdout else 'stderr', self._org_stream)
 
@@ -38,13 +36,11 @@ class TestIORedirector:
         assert sys.stdout is org_stdout
         assert sys.stderr is org_stderr
 
-
     def test_file_creation(self, tmp_path):
         with IORedirector(tmp_path / 'log.txt'):
             pass
         assert (tmp_path / 'log.txt').exists()
         assert (tmp_path / 'log.txt').read_text() == ''
-
 
     def test_basic_write(self, tmp_path):
         with DummyStream() as out, DummyStream(stdout=False) as err:
@@ -61,7 +57,6 @@ class TestIORedirector:
         assert sys.stdout is out._org_stream
         assert sys.stderr is err._org_stream
 
-    
     def test_writes_after_exit(self, tmp_path):
         with DummyStream() as out, DummyStream(stdout=False) as err:
             with IORedirector(tmp_path / 'log.txt'):
@@ -80,7 +75,7 @@ class TestIORedirector:
         with DummyStream() as out2, DummyStream(stdout=False) as err2:
             print('Test', file=saved_out)
             print('Error', file=saved_err)
-            
+
             assert out.data == 'Test\n'
             assert err.data == 'Error\n'
 
