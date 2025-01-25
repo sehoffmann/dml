@@ -11,6 +11,7 @@ import pynvml
 import torch
 from omegaconf import OmegaConf
 from progress_table import ProgressTable
+from torch.profiler import profile, ProfilerActivity
 
 from ..git import git_diff
 from ..util.logging import DevNullIO, experiment_header, general_diagnostics, IORedirector
@@ -29,6 +30,7 @@ __all__ = [
     'CallbackList',
     'CbPriority',
     'Callback',
+    'ProfilerCallback',
     'TimerCallback',
     'TableCallback',
     'ReduceMetricsCallback',
@@ -102,6 +104,7 @@ class CbPriority(IntEnum):
 
     OBJECT_METHODS = 0
 
+    PROFILER = 100
     WANDB_LOGGER = 110
     CSV = 110
     TENSORBOARD = 110
@@ -161,6 +164,51 @@ class Callback:
         Executed after each epoch.
         """
         pass
+
+
+class ProfilerCallback(Callback):
+    """
+    A callback that profiles the training process and saves the results to a file.
+    """
+
+    def __init__(self, epochs=None, record_shapes=False, schedule=None):
+        self.epochs = epochs
+        self.record_shapes = record_shapes
+        self.schedule = schedule
+
+        self.profiler = None
+        self._capturing = False
+
+    def pre_epoch(self, stage: 'Stage'):
+        if self.epochs and stage.current_epoch not in self.epochs:
+            return
+
+        self.profiler = profile(
+            activities=[
+                ProfilerActivity.CPU,
+                ProfilerActivity.CUDA,
+            ],
+            record_shapes=self.record_shapes,
+            schedule=self.schedule,
+        )
+        self.profiler.__enter__()
+        self._capturing = True
+
+    def post_epoch(self, stage):
+        if self.epochs and (stage.current_epoch - 1) not in self.epochs:
+            return
+
+        self.profiler.__exit__(None, None, None)
+        self._capturing = False
+
+        if stage.run_dir:
+            outfile = str(stage.run_dir / f'{stage.name}_epoch{stage.current_epoch - 1}_trace.json')
+            self.profiler.export_chrome_trace(outfile)
+
+    def cleanup(self, pipe, exc_type, exc_value, traceback):
+        if self._capturing:
+            self.profiler.__exit__(exc_type, exc_value, traceback)
+            self._capturing = False
 
 
 class TimerCallback(Callback):

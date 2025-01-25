@@ -1,7 +1,18 @@
 from typing import Any, Callable
 
+import torch
+
 from . import logging as dml_logging
-from .callbacks import Callback, CallbackList, CbPriority, ReduceMetricsCallback, TableCallback, TimerCallback
+from .callbacks import (
+    Callback,
+    CallbackList,
+    CbPriority,
+    ProfilerCallback,
+    ReduceMetricsCallback,
+    TableCallback,
+    TimerCallback,
+)
+from .distributed import is_root
 from .metrics import Tracker, TrainingHistory
 
 
@@ -53,10 +64,13 @@ class Stage:
 
         self._timer = TimerCallback()
         self._table_callback = TableCallback()
+        self._reduce_metrics_callback = ReduceMetricsCallback()
+        self._forward_callback = _ForwardCallback()
+        self._profiler_callback = None
         self.add_callback(self._timer, CbPriority.STAGE_TIMER)
-        self.add_callback(ReduceMetricsCallback(), CbPriority.METRIC_REDUCTION)
+        self.add_callback(self._reduce_metrics_callback, CbPriority.METRIC_REDUCTION)
         self.add_callback(self._table_callback, CbPriority.TABLE)
-        self.add_callback(_ForwardCallback(), CbPriority.OBJECT_METHODS)  # methods have priority 0
+        self.add_callback(self._forward_callback, CbPriority.OBJECT_METHODS)  # methods have priority 0
 
     @property
     def device(self):
@@ -102,6 +116,25 @@ class Stage:
     @property
     def table(self):
         return self._table_callback.get_table(self)
+
+    @property
+    def has_profiler(self) -> bool:
+        """
+        Returns True if the profiler is enabled for this stage, otherwise False.
+        """
+        return self._profiler_callback is not None
+
+    @property
+    def profiler(self) -> torch.profiler.profile | None:
+        """
+        If enabled, returns the profiler object associated with this stage, otherwise None.
+
+        Returns:
+            torch.profiler.profile or None: The profiler object.
+        """
+        if not self.has_profiler:
+            return None
+        return self._profiler_callback.profiler
 
     @property
     def _run_overridden(self):
@@ -166,6 +199,43 @@ class Stage:
         self._table_callback.track_metric(
             self, name, metric=metric, formatter=formatter, width=width, color=color, alignment=alignment
         )
+
+    def enable_profiler(self, epochs: list | None = [0], schedule=None):
+        """
+        Enables the profiler for this stage.
+
+        If the `schedule` argument is not provided, the following default schedule is used:
+        ```
+        schedule = torch.profiler.schedule(
+            wait=5,
+            warmup=10,
+            active=5,
+            repeat=1,
+        )
+        ```
+
+        The user must call `self.profiler.step()` on the root rank at the end of each iteration to advance the profiler.
+
+        Args:
+            epochs (list, optional): The epochs to profile. Defaults to [0]. If None, the profiler is enabled for all epochs.
+            schedule: The schedule for the profiler, i.e. the object returned by torch.profiler.schedule(). If None, a default schedule is used. Defaults to None.
+        """
+        if not is_root():
+            return
+
+        if self.has_profiler:
+            raise ValueError('Profiler is already enabled for this stage.')
+
+        if schedule is None:
+            schedule = torch.profiler.schedule(
+                wait=10,
+                warmup=10,
+                active=5,
+                repeat=1,
+            )
+
+        self._profiler_callback = ProfilerCallback(epochs=epochs, schedule=schedule)
+        self.add_callback(self._profiler_callback, CbPriority.PROFILER)
 
     def pre_stage(self):
         """
