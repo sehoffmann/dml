@@ -502,6 +502,7 @@ class TensorboardCallback(Callback):
 
     def __init__(self, log_dir: Union[str, Path]):
         self.log_dir = Path(log_dir)
+        self.writer = None
         try:
             from torch.utils.tensorboard import SummaryWriter  # noqa: F401
         except ImportError:
@@ -518,7 +519,8 @@ class TensorboardCallback(Callback):
             self.writer.add_scalar(key, value.item(), stage.current_epoch)
 
     def cleanup(self, pipe, exc_type, exc_value, traceback):
-        self.writer.close()
+        if self.writer is not None:
+            self.writer.close()
 
 
 class DiagnosticsCallback(Callback):
