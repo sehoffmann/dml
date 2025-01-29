@@ -576,27 +576,34 @@ class CudaCallback(Callback):
     Logs various properties pertaining to CUDA devices.
     """
 
+    @staticmethod
+    def _call_pynvml(method, *args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except pynvml.NVMLError:
+            return None
+
     def pre_run(self, pipe):
         handle = torch.cuda._get_pynvml_handler(pipe.device)
 
         info = {
-            'name': pynvml.nvmlDeviceGetName(handle),
-            'uuid': pynvml.nvmlDeviceGetUUID(handle),
-            'serial': pynvml.nvmlDeviceGetSerial(handle),
+            'name': self._call_pynvml(pynvml.nvmlDeviceGetName, handle),
+            'uuid': self._call_pynvml(pynvml.nvmlDeviceGetUUID, handle),
+            'serial': self._call_pynvml(pynvml.nvmlDeviceGetSerial, handle),
             'torch_device': str(pipe.device),
-            'minor_number': pynvml.nvmlDeviceGetMinorNumber(handle),
-            'architecture': pynvml.nvmlDeviceGetArchitecture(handle),
-            'brand': pynvml.nvmlDeviceGetBrand(handle),
-            'vbios_version': pynvml.nvmlDeviceGetVbiosVersion(handle),
-            'driver_version': pynvml.nvmlSystemGetDriverVersion(),
-            'cuda_driver_version': pynvml.nvmlSystemGetCudaDriverVersion_v2(),
-            'nvml_version': pynvml.nvmlSystemGetNVMLVersion(),
-            'total_memory': pynvml.nvmlDeviceGetMemoryInfo(handle, pynvml.nvmlMemory_v2).total,
-            'reserved_memory': pynvml.nvmlDeviceGetMemoryInfo(handle, pynvml.nvmlMemory_v2).reserved,
-            'num_gpu_cores': pynvml.nvmlDeviceGetNumGpuCores(handle),
-            'power_managment_limit': pynvml.nvmlDeviceGetPowerManagementLimit(handle),
-            'power_managment_default_limit': pynvml.nvmlDeviceGetPowerManagementDefaultLimit(handle),
-            'cuda_compute_capability': pynvml.nvmlDeviceGetCudaComputeCapability(handle),
+            'minor_number': self._call_pynvml(pynvml.nvmlDeviceGetMinorNumber, handle),
+            'architecture': self._call_pynvml(pynvml.nvmlDeviceGetArchitecture, handle),
+            'brand': self._call_pynvml(pynvml.nvmlDeviceGetBrand, handle),
+            'vbios_version': self._call_pynvml(pynvml.nvmlDeviceGetVbiosVersion, handle),
+            'driver_version': self._call_pynvml(pynvml.nvmlSystemGetDriverVersion),
+            'cuda_driver_version': self._call_pynvml(pynvml.nvmlSystemGetCudaDriverVersion_v2),
+            'nvml_version': self._call_pynvml(pynvml.nvmlSystemGetNVMLVersion),
+            'total_memory': self._call_pynvml(pynvml.nvmlDeviceGetMemoryInfo, handle, pynvml.nvmlMemory_v2).total,
+            'reserved_memory': self._call_pynvml(pynvml.nvmlDeviceGetMemoryInfo, handle, pynvml.nvmlMemory_v2).reserved,
+            'num_gpu_cores': self._call_pynvml(pynvml.nvmlDeviceGetNumGpuCores, handle),
+            'power_managment_limit': self._call_pynvml(pynvml.nvmlDeviceGetPowerManagementLimit, handle),
+            'power_managment_default_limit': self._call_pynvml(pynvml.nvmlDeviceGetPowerManagementDefaultLimit, handle),
+            'cuda_compute_capability': self._call_pynvml(pynvml.nvmlDeviceGetCudaComputeCapability, handle),
         }
         all_devices = all_gather_object(info)
 
