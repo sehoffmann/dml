@@ -5,9 +5,6 @@ dmlcloud
 
 This the API reference for the dmlcloud package.
 
-Core
-----
-
 .. autosummary::
     :toctree: generated
 
@@ -76,6 +73,16 @@ Metric Tracking
 
     TrainingHistory
     Tracker
+
+
+Model Creation
+--------------
+.. autosummary::
+    :toctree: generated
+
+    scale_lr
+    wrap_ddp
+    count_parameters
 
 
 Config Helpers
