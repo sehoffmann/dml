@@ -99,6 +99,7 @@ __all__ += [
     TrainingHistory,
 ]
 
+# Logging
 
 from .core.logging import (
     critical,
@@ -130,10 +131,22 @@ __all__ += [
     'critical',
 ]
 
+# Model helper
+
 from .core.model import count_parameters, scale_lr, wrap_ddp
 
 __all__ += [
     'wrap_ddp',
     'scale_lr',
     'count_parameters',
+]
+
+# Config helper
+
+from .core.config import factory_from_cfg, import_object, obj_from_cfg
+
+__all__ += [
+    'import_object',
+    'factory_from_cfg',
+    'obj_from_cfg',
 ]

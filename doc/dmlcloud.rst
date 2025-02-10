@@ -15,7 +15,7 @@ Core
     Stage
 
 
-torch.distributed helpers
+torch.distributed Helpers
 -------------------------
 dmlcloud provides a set of helper functions to simplify the use of torch.distributed.
 
@@ -76,3 +76,15 @@ Metric Tracking
 
     TrainingHistory
     Tracker
+
+
+Config Helpers
+---------------
+These functions can be used to create objects from configuration files.
+
+.. autosummary::
+    :toctree: generated
+
+    import_object
+    factory_from_cfg
+    obj_from_cfg
