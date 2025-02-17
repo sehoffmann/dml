@@ -26,10 +26,13 @@ __all__ = [
 
 # Pipeline
 
-from .core.pipeline import Pipeline
+from .core.pipeline import current_pipe, current_stage, log_metric, Pipeline
 
 __all__ += [
     'Pipeline',
+    'current_pipe',
+    'current_stage',
+    'log_metric',
 ]
 
 # Stage

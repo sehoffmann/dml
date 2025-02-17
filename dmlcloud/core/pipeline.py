@@ -2,7 +2,7 @@ import warnings
 from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch.distributed as dist
@@ -29,7 +29,48 @@ from .stage import Stage
 
 __all__ = [
     'Pipeline',
+    'current_pipe',
+    'current_stage',
+    'log_metric',
 ]
+
+_CURRENT_PIPE = None
+
+
+def _set_current_pipe(pipe):
+    global _CURRENT_PIPE
+    if pipe is None:
+        if _CURRENT_PIPE is None:
+            raise ValueError('Can not reset current pipe if there is none')
+        _CURRENT_PIPE = None
+    else:
+        if _CURRENT_PIPE is not None:
+            raise ValueError('Pipe already set')
+        _CURRENT_PIPE = pipe
+
+
+def current_pipe() -> 'Pipeline | None':
+    """
+    Returns the current running pipeline or None if no pipeline is running
+    """
+    return _CURRENT_PIPE
+
+
+def current_stage() -> Stage | None:
+    """
+    Returns the current running stage or None if no pipeline is running
+    """
+    if current_pipe() is None:
+        return None
+    else:
+        return current_pipe().current_stage
+
+
+def log_metric(name: str, value: Any, reduction: str = 'mean', prefixed: bool = True):
+    """
+    Shorthand for current_stage().log
+    """
+    return current_stage().log(name, value, reduction=reduction, prefixed=prefixed)
 
 
 class _RunGuard:
@@ -41,9 +82,12 @@ class _RunGuard:
         self.pipe = pipe
 
     def __enter__(self):
-        pass
+        _set_current_pipe(self.pipe)
+        return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        _set_current_pipe(None)
+
         suppress_exception = False
         if exc_type is KeyboardInterrupt:
             dml_logging.info('------- Training interrupted by user -------')

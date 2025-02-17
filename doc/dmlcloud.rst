@@ -10,6 +10,9 @@ This the API reference for the dmlcloud package.
 
     Pipeline
     Stage
+    current_pipe
+    current_stage
+    log_metric
 
 
 torch.distributed Helpers
