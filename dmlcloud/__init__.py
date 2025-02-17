@@ -1,8 +1,10 @@
 """
-Hello world
+A torch library for easy distributed deep learning on HPC clusters.
+Supports both slurm and MPI. No unnecessary abstractions and overhead.
+Simple, yet powerful, API.
 """
 
-__version__ = "0.3.3"
+__version__ = '0.4'
 
 ###################################
 # Sub Packages

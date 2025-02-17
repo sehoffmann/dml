@@ -7,13 +7,11 @@ class DummyStage(dml.Stage):
 
 
 class ProbingCallback(dml.Callback):
-
     def __init__(self, pipe=None, stage=None):
         self.pipe = pipe
         self.stage = stage
         self.pipe_test = False
         self.stage_test = False
-
 
     def pre_run(self, pipe):
         self.pipe_test = dml.current_pipe() is self.pipe
@@ -23,9 +21,8 @@ class ProbingCallback(dml.Callback):
 
 
 class LogCallback(dml.Callback):
-
     def __init__(self):
-        self. i = 0
+        self.i = 0
 
     def pre_epoch(self, stage):
         dml.log_metric('test', self.i)
@@ -40,19 +37,17 @@ class TestGlobalAccessors:
         pipe.append(stage1)
         pipe.append(stage2)
 
-
         cb1 = ProbingCallback(pipe)
-        cb2 = ProbingCallback(stage = stage1)
-        cb3 = ProbingCallback(stage = stage2)
+        cb2 = ProbingCallback(stage=stage1)
+        cb3 = ProbingCallback(stage=stage2)
 
         pipe.add_callback(cb1)
         stage1.add_callback(cb2)
         stage2.add_callback(cb3)
 
-
         assert dml.current_pipe() is None
         assert dml.current_stage() is None
-        
+
         pipe.run()
         assert cb1.pipe_test
         assert cb2.stage_test
@@ -61,7 +56,6 @@ class TestGlobalAccessors:
         assert dml.current_pipe() is None
         assert dml.current_stage() is None
 
-    
     def test_logging(self, torch_distributed):
         pipe = dml.Pipeline()
         stage1 = DummyStage(epochs=3)
@@ -74,13 +68,7 @@ class TestGlobalAccessors:
         pipe.run()
 
         assert 'test' in stage1.history
-        assert list(stage1.history['test']) == [0,1,2]
-        
+        assert list(stage1.history['test']) == [0, 1, 2]
+
         assert 'test' in stage2.history
         assert list(stage2.history['test']) == [3]
-
-
-
-
-if __name__ == '__main__':
-    sys.exit(pytest.main([__file__]))
