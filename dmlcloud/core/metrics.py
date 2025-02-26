@@ -177,6 +177,10 @@ class Tracker(torch.nn.Module):
         if reduction not in ['mean', 'sum', 'min', 'max', 'cat']:
             raise ValueError(f'Invalid reduction {reduction}. Must be one of mean, sum, min, max, cat')
 
+        if not torch.is_tensor(value):
+            value = torch.tensor(value)
+        value = value.cpu()
+
         if name not in self.metrics:
             if reduction == 'mean':
                 metric = torchmetrics.MeanMetric(**kwargs)
@@ -188,8 +192,7 @@ class Tracker(torch.nn.Module):
                 metric = torchmetrics.MaxMetric(**kwargs)
             elif reduction == 'cat':
                 metric = torchmetrics.CatMetric(**kwargs)
-            device = value.device if torch.is_tensor(value) else torch.device('cpu')
-            self.add_metric(name, metric.to(device))
+            self.add_metric(name, metric.cpu())
 
         self.metrics[name].update(value)
 
