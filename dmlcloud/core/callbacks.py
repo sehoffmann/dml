@@ -165,6 +165,12 @@ class Callback:
         """
         pass
 
+    def post_step(self, stage: 'Stage'):
+        """
+        Executed after each step. Stage must call `finish_step` to trigger this callback.
+        """
+        pass
+
 
 class ProfilerCallback(Callback):
     """
@@ -343,6 +349,7 @@ class ReduceMetricsCallback(Callback):
         metrics = stage.metrics.reduce()
         stage.history.append_metrics(**metrics)
         stage.history.next_step()
+        stage.step = 0  # Reset the step counter
 
 
 class CheckpointCallback(Callback):

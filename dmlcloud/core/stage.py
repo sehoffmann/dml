@@ -38,6 +38,9 @@ class _ForwardCallback(Callback):
     def post_epoch(self, stage):
         stage.post_epoch()
 
+    def post_step(self, stage):
+        stage.post_step()
+
 
 class Stage:
     """
@@ -58,6 +61,9 @@ class Stage:
 
         self.history = TrainingHistory()
         self.metrics = Tracker()
+
+        self.step = 0
+        self.global_step = 0
 
         self.metric_prefix = None
         self.barrier_timeout = None
@@ -263,6 +269,12 @@ class Stage:
         """
         pass
 
+    def post_step(self):
+        """
+        Executed after each step. Stage must call `finish_step()` at the end of each step.
+        """
+        pass
+
     def run():
         """
         Override this method to implement the main logic of the stage and do manual epoch management.
@@ -284,6 +296,11 @@ class Stage:
 
         self._post_epoch()
         self._pre_epoch()
+
+    def finish_step(self):
+        self._post_step()
+        self.step += 1
+        self.global_step += 1
 
     def run_epoch(self):
         """
@@ -342,3 +359,8 @@ class Stage:
         callbacks = self.callbacks + self.pipe.callbacks
         for callback in callbacks:
             callback.post_epoch(self)
+
+    def _post_step(self):
+        callbacks = self.callbacks + self.pipe.callbacks
+        for callback in callbacks:
+            callback.post_step(self)
