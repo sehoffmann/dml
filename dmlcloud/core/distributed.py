@@ -1,3 +1,4 @@
+import atexit
 import inspect
 import os
 import random
@@ -546,6 +547,8 @@ def init(kind='auto'):
         _init_process_group_MPI()
     elif kind == 'env':
         _init_process_group_env()
+
+    atexit.register(deinitialize_torch_distributed)
 
 
 def deinitialize_torch_distributed():
