@@ -434,6 +434,7 @@ def _init_process_group_slurm(port=DEFAULT_PORT, **kwargs):
     _WorkerInfo.LOCAL_WORLD_SIZE = tasks_per_node[_WorkerInfo.NODE_ID]
 
     ip = os.environ['SLURM_SRUN_COMM_HOST']
+    port += int(os.environ['SLURM_JOB_ID']) % 7879
 
     dist.init_process_group(
         init_method=f'tcp://{ip}:{port}',
