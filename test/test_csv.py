@@ -14,11 +14,11 @@ class DummyStage(dml.Stage):
 
 class TestCsvCallback:
     def test_basic_metrics(self, torch_distributed, tmp_path):
-        metrics_file = tmp_path / 'metrics.csv'
+        metrics_file = tmp_path / 'epoch_metrics_DummyStage.csv'
 
         pipe = dml.Pipeline()
         pipe.append(DummyStage(epochs=5))
-        pipe.add_callback(CsvCallback(metrics_file))
+        pipe.add_callback(CsvCallback(tmp_path))
         pipe.run()
 
         assert metrics_file.exists()
@@ -36,7 +36,6 @@ class TestCsvCallback:
         assert rows[5][:3] == ['4', '6.0', '94.0']
 
         # misc metrics
-        assert 'misc/epoch' in rows[0]
         assert 'misc/epoch_time' in rows[0]
         assert 'misc/total_time' in rows[0]
         assert 'misc/eta' in rows[0]
@@ -44,20 +43,20 @@ class TestCsvCallback:
     def test_stage_name(self, torch_distributed, tmp_path):
         pipe = dml.Pipeline()
         pipe.append(DummyStage(epochs=5))
-        pipe.add_callback(CsvCallback(tmp_path, append_stage_name=True))
+        pipe.add_callback(CsvCallback(tmp_path))
         pipe.run()
 
-        assert (tmp_path / 'metrics_DummyStage.csv').exists()
+        assert (tmp_path / 'epoch_metrics_DummyStage.csv').exists()
 
     def test_duplicate_names(self, torch_distributed, tmp_path):
         pipe = dml.Pipeline()
         pipe.append(DummyStage(epochs=5))
         pipe.append(DummyStage(epochs=5))
-        pipe.add_callback(CsvCallback(tmp_path, append_stage_name=True))
+        pipe.add_callback(CsvCallback(tmp_path))
         pipe.run()
 
-        assert (tmp_path / 'metrics_DummyStage_1.csv').exists()
-        assert (tmp_path / 'metrics_DummyStage_2.csv').exists()
+        assert (tmp_path / 'epoch_metrics_DummyStage_1.csv').exists()
+        assert (tmp_path / 'epoch_metrics_DummyStage_2.csv').exists()
 
 
 if __name__ == '__main__':

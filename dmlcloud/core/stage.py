@@ -60,7 +60,9 @@ class Stage:
         self.pipe = None  # set by the pipeline
 
         self.history = TrainingHistory()
+        self.step_history = TrainingHistory()
         self.metrics = Tracker()
+        self.step_metrics = Tracker()
 
         self.step = 0
         self.global_step = 0
@@ -165,10 +167,12 @@ class Stage:
         """
         self.callbacks.append(callback, priority)
 
-    def log(self, name: str, value: Any, reduction: str = 'mean', prefixed: bool = True):
+    def log(self, name: str, value: Any, reduction: str = 'mean', prefixed: bool = True, log_step: bool = True):
         if prefixed and self.metric_prefix:
             name = f'{self.metric_prefix}/{name}'
         self.metrics.log(name, value, reduction)
+        if log_step:
+            self.step_metrics.log(name, value, reduction)
 
     def add_metric(self, name, metric):
         metric = metric.to(self.device)
@@ -299,8 +303,6 @@ class Stage:
 
     def finish_step(self):
         self._post_step()
-        self.step += 1
-        self.global_step += 1
 
     def run_epoch(self):
         """

@@ -34,7 +34,6 @@ class TrainingHistory:
 
     def __init__(self):
         self.num_steps = 0
-        self._current_values = {}
         self._metrics = {}
         self._dtypes = {}
 
@@ -65,6 +64,10 @@ class TrainingHistory:
     def items(self):
         return [(name, self[name]) for name in self._metrics]
 
+    def rows(self):
+        for i in range(self.num_steps):
+            yield {name: self._metrics[name][i] for name in self._metrics}
+
     def append_metric(self, name: str, value: Union[ArrayLike, Any]):
         """
         Adds a value for a metric at the current step.
@@ -76,14 +79,6 @@ class TrainingHistory:
         if name in self._current_values:
             raise ValueError(f'Metric {name} already has a value for step {self.num_steps}')
 
-        if name not in self._metrics and self.num_steps > 0:
-            raise ValueError(f'Cannot add metric {name} after the first step')
-
-        if isinstance(value, torch.Tensor):
-            value = value.detach().to('cpu', non_blocking=True)
-
-        self._current_values[name] = value
-
     def append_metrics(self, **metrics):
         """
         Adds multiple metrics at the current step.
@@ -92,28 +87,16 @@ class TrainingHistory:
             **metrics: The metrics to add.
         """
         for name, value in metrics.items():
-            self.append_metric(name, value)
-
-    def next_step(self):
-        """
-        Advances the step counter.
-        """
-
-        for name in self._metrics:
-            if name not in self._current_values:
-                raise ValueError(f'Metric {name} does not have a value for step {self.num_steps}')
-
-        for name, value in self._current_values.items():
-            if type(value) == ArrayLike:  # noqa
-                value = np.as_array(value)
+            dtype = value.dtype if type(value) == ArrayLike else object  # noqa
+            if isinstance(value, torch.Tensor) or isinstance(value, np.ndarray):
+                value = value.item()
 
             if name not in self._metrics:
-                self._metrics[name] = [value]
-                self._dtypes[name] = value.dtype if type(value) == ArrayLike else object  # noqa
+                self._metrics[name] = ([None] * self.num_steps) + [value]
+                self._dtypes[name] = dtype
             else:
                 self._metrics[name].append(value)
 
-        self._current_values = {}
         self.num_steps += 1
 
     def last(self) -> dict[str, Any]:
@@ -125,16 +108,6 @@ class TrainingHistory:
         """
 
         return {name: values[-1] for name, values in self._metrics.items()}
-
-    def current(self) -> dict[str, Any]:
-        """
-        Returns the current, but not yet saved, value for each metric.
-
-        Returns:
-            dict[str, Any]: The current value for each metric.
-        """
-
-        return {name: self._current_values[name] for name in self._current_values}
 
     def min(self) -> dict[str, min_return_type]:
         """
@@ -180,10 +153,12 @@ class Tracker(torch.nn.Module):
         if not torch.is_tensor(value):
             value = torch.tensor(value)
         value = value.cpu()
+        dtype = value.dtype
 
         if name not in self.metrics:
             if reduction == 'mean':
                 metric = torchmetrics.MeanMetric(**kwargs)
+                dtype = torch.float32
             elif reduction == 'sum':
                 metric = torchmetrics.SumMetric(**kwargs)
             elif reduction == 'min':
@@ -192,15 +167,20 @@ class Tracker(torch.nn.Module):
                 metric = torchmetrics.MaxMetric(**kwargs)
             elif reduction == 'cat':
                 metric = torchmetrics.CatMetric(**kwargs)
-            self.add_metric(name, metric.cpu())
+            metric = metric.cpu().set_dtype(dtype)
+            self.add_metric(name, metric)
 
         self.metrics[name].update(value)
 
-    def reduce(self):
+    def reduce(self, reset: bool = True):
         values = {}
         for name, metric in self.metrics.items():
-            values[name] = metric.compute()
-            metric.reset()
+            if metric.update_called:
+                values[name] = metric.compute()
+                if reset:
+                    metric.reset()
+            else:
+                values[name] = None
         return values
 
     def clear(self):
