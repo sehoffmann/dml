@@ -262,7 +262,7 @@ class TableCallback(Callback):
 
     def get_table(self, stage: 'Stage'):
         if self._table is None:
-            self._table = ProgressTable(file=sys.stdout if is_root() else DevNullIO())
+            self._table = ProgressTable(file=sys.stdout if is_root() else DevNullIO(), interactive=0)
             self.track_metric(stage, 'Epoch', width=5)
             self.track_metric(stage, 'Took', 'misc/epoch_time', formatter=TimedeltaFormatter(), width=7)
             if stage._run_epoch_overridden:
