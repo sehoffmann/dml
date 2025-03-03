@@ -548,15 +548,18 @@ def init(kind='auto'):
     elif kind == 'env':
         _init_process_group_env()
 
-    atexit.register(deinitialize_torch_distributed)
+    atexit.register(deinitialize_torch_distributed, fail_silently=True)
 
 
-def deinitialize_torch_distributed():
+def deinitialize_torch_distributed(fail_silently=False):
     """
     Deinitializes the torch distributed framework.
     At the time of writing, `dist.destroy_process_group()` is not well documented.
     Hence, this function.
     """
+    if not dist.is_initialized() and fail_silently:
+        return
+
     _WorkerInfo.INIT_METHOD = None
     _WorkerInfo.RANK = None
     _WorkerInfo.WORLD_SIZE = None
